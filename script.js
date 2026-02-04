@@ -573,6 +573,7 @@ async function respondToChallenge(matchId, action) {
 }
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
+
 function renderPlayerDashboard() {
     const container = document.getElementById('view-settings');
     if (!container) return;
@@ -585,8 +586,7 @@ function renderPlayerDashboard() {
     if (p) {
         const rank = getRankInfo(p.bounty || 0);
         
-        // --- NEW: AVATAR LOGIC ---
-        // If avatar exists, show IMG. If error (broken link), hide IMG and show Initials div.
+        // --- AVATAR LOGIC ---
         const avatarHTML = p.avatar 
             ? `<img src="${p.avatar}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                <div class="w-full h-full bg-slate-800 flex items-center justify-center text-2xl font-black text-white hidden">${(p.name || "U").charAt(0).toUpperCase()}</div>`
@@ -705,11 +705,30 @@ function renderPlayerDashboard() {
                 <div id="admin-players-list" class="space-y-2"></div>
                 <button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
             </div>`;
+    } else {
+        // --- NEW: EDIT PROFILE BUTTON (Only for Players) ---
+        html += `
+            <div class="mt-8 mb-4">
+                 <div class="moving-border-blue p-[1px] rounded-[2.1rem] shadow-xl group cursor-pointer active:scale-95 transition-transform" onclick="openEditProfile()">
+                    <div class="bg-slate-900 rounded-[2rem] p-5 flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                                <i data-lucide="settings-2" class="w-5 h-5 text-blue-400"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-[9px] font-black text-white uppercase tracking-widest">Edit Profile</h4>
+                                <p class="text-[7px] text-slate-500 font-bold uppercase mt-0.5">Update Avatar & Phone</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
+                    </div>
+                 </div>
+            </div>`;
     }
     
     // Footer
     html += `
-        <div class="text-center pt-10 pb-20">
+        <div class="text-center pt-6 pb-20">
             <button onclick="logout()" class="px-10 py-4 bg-rose-500/5 text-rose-500 text-[10px] font-black rounded-full border border-rose-500/20 tracking-[0.2em] shadow-xl active:scale-95 transition-all mb-16">
                 TERMINATE SESSION
             </button>
@@ -719,6 +738,7 @@ function renderPlayerDashboard() {
             <p class="text-[6px] text-slate-800 font-black uppercase mt-4 tracking-widest">SLC-OS v3.0.1 Stable Build</p>
         </div>
     </div>`;
+    
     container.innerHTML = html;
     
     // Recent Form Logic
@@ -744,9 +764,6 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-
-
-
 
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
@@ -1580,6 +1597,44 @@ Your ID: ${homeP.id}
     // 4. Open the Native SMS App
     // We use encodeURIComponent to ensure special characters work
     window.open(`sms:${targetPhone}?body=${encodeURIComponent(msg)}`, '_self');
+}
+
+// --- NEW: PROFILE EDITING LOGIC ---
+
+function openEditProfile() {
+    const rawID = localStorage.getItem('slc_user_id');
+    const p = state.players.find(x => x.id === rawID);
+    
+    if (!p) return notify("Profile data not found", "x-circle");
+
+    // Pre-fill existing data
+    document.getElementById('edit-phone').value = p.phone || "";
+    document.getElementById('edit-avatar').value = p.avatar || "";
+    
+    // Show Modal
+    document.getElementById('modal-edit-profile').classList.remove('hidden');
+}
+
+async function saveProfileChanges() {
+    const rawID = localStorage.getItem('slc_user_id');
+    const newPhone = document.getElementById('edit-phone').value.trim();
+    const newAvatar = document.getElementById('edit-avatar').value.trim();
+
+    if (!newPhone) return notify("Phone number required", "alert-circle");
+
+    try {
+        await db.collection("players").doc(rawID).update({
+            phone: newPhone,
+            avatar: newAvatar
+        });
+        
+        notify("Profile Updated Successfully!", "check-circle");
+        document.getElementById('modal-edit-profile').classList.add('hidden');
+        renderPlayerDashboard(); // Refresh UI to show new avatar immediately
+    } catch (e) {
+        console.error(e);
+        notify("Update Failed", "x-circle");
+    }
 }
 
 
