@@ -1653,8 +1653,6 @@ async function setSponsorMessage() {
     }
 }
 
-// FIND THIS FUNCTION IN YOUR SCRIPT.JS AND REPLACE IT COMPLETELY
-// --- REPLACE YOUR OLD openSMS FUNCTION WITH THIS ---
 function openSMS(matchId, target) {
     const m = state.matches.find(x => x.id === matchId);
     if (!m) return notify("Match not found", "x-circle");
@@ -1666,17 +1664,18 @@ function openSMS(matchId, target) {
     if (!h || !a) return notify("Player data missing", "alert-circle");
 
     // 2. Determine Recipient & Opponent based on which button was clicked
-    const recipient = target === 'home' ? h : a;
-    const opponent  = target === 'home' ? a : h;
+    // If target is missing (fallback), default to 'home'
+    const recipient = target === 'away' ? a : h;
+    const opponent  = target === 'away' ? h : a;
 
-    // 3. Validate Phone
+    // 3. Validate Recipient Phone
     if (!recipient.phone) return notify(`${recipient.name} has no phone #`, "phone-off");
 
     // 4. Formatting Helpers
     const deadlineTime = m.deadline ? m.deadline.split('T')[1] : "23:59";
     const dateStr = m.scheduledDate || "TBA";
 
-    // 5. Construct Message (Only shows Recipient's ID)
+    // 5. Construct Message (Specific to ONE person)
     const msg = 
 `OFFICIAL SLC FIXTURE NOTICE
 
