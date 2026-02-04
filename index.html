@@ -535,6 +535,37 @@
         <h2 id="champion-name" class="text-4xl font-black text-white uppercase italic tracking-tighter mb-8 drop-shadow-lg"></h2>
         <button onclick="document.getElementById('champion-overlay').classList.add('hidden')" class="px-8 py-3 bg-white/5 border border-white/10 text-white text-[10px] font-black rounded-full uppercase tracking-widest active:scale-95 transition-all">Dismiss</button>
     </div>
+<div id="modal-edit-profile" class="fixed inset-0 z-[950] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
+    <div class="moving-border-blue rounded-[2.5rem] p-[1.5px] w-full max-w-sm animate-pop-in">
+        <div class="bg-slate-900 rounded-[2.4rem] p-8 text-center border border-white/5 relative">
+            
+            <div class="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-lg shadow-blue-500/10">
+                <i data-lucide="user-cog" class="w-8 h-8 text-blue-400"></i>
+            </div>
+            
+            <h3 class="text-white font-bold text-sm mb-1 uppercase tracking-widest">Update Profile</h3>
+            <p class="text-[9px] text-slate-500 font-bold uppercase mb-6 tracking-wide">Modify your public identity</p>
+
+            <div class="space-y-4 text-left">
+                <div>
+                    <label class="text-[8px] text-slate-400 font-black uppercase ml-2 mb-1 block">New Mobile Number</label>
+                    <input type="tel" id="edit-phone" placeholder="Enter new number..." class="w-full p-4 rounded-2xl bg-slate-950 border border-white/10 text-white text-xs font-bold outline-none focus:border-blue-500 transition-colors">
+                </div>
+
+                <div>
+                    <label class="text-[8px] text-slate-400 font-black uppercase ml-2 mb-1 block">New Avatar Link</label>
+                    <input type="url" id="edit-avatar" placeholder="Paste Direct Image Link..." class="w-full p-4 rounded-2xl bg-slate-950 border border-white/10 text-white text-[10px] outline-none focus:border-blue-500 transition-colors">
+                    <p class="text-[7px] text-slate-600 mt-2 italic px-2">*Use postimages.org direct link for best results.</p>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button onclick="document.getElementById('modal-edit-profile').classList.add('hidden')" class="flex-1 py-3 bg-white/5 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest border border-white/5 hover:bg-white/10">Cancel</button>
+                <button onclick="saveProfileChanges()" class="flex-1 py-3 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-600/20 active:scale-95 transition-all">Save Updates</button>
+            </div>
+        </div>
+    </div>
+</div>
 
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
