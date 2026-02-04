@@ -1012,13 +1012,16 @@ function renderLeaderboard() {
                     
                     <div class="flex-1 overflow-hidden">
                         <span class="font-bold text-xs text-white uppercase truncate block">${p.name}</span>
-                        <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">W: ${p.wins} | L: ${p.losses}</p>
+                        <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}
+                        </p>
                     </div>
                     <span class="font-black text-emerald-400 text-xs ml-2">${p.bounty.toLocaleString()}</span>
                 </div>
             </div>`;
     });
 }
+
 
 // --- [NEW] BULK SCHEDULING LOGIC ---
 
