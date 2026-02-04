@@ -1217,8 +1217,26 @@ function renderSchedule() {
             innerHTML += `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"><div class="w-8 h-8 bg-gold-500 rounded-full flex items-center justify-center shadow-lg animate-pop-in"><i data-lucide="check" class="w-5 h-5 text-black"></i></div></div>`;
         }
         if (state.isAdmin && !state.bulkMode) {
-            innerHTML += `<div class="mt-4 pt-3 border-t border-white/5 flex gap-2"><button onclick="event.stopPropagation(); openSMS('${m.id}')" class="flex-1 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all"><i data-lucide="message-square" class="w-3 h-3"></i> Send SMS</button></div>`;
-        }
+    // 1. Get FULL names (removed the .split logic)
+    const hName = h ? h.name : 'HOME';
+    const aName = a ? a.name : 'AWAY';
+
+    innerHTML += `
+    <div class="mt-4 pt-3 border-t border-white/5 flex gap-2">
+        <button onclick="event.stopPropagation(); openSMS('${m.id}', 'home')" 
+            class="flex-1 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all overflow-hidden">
+            <i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> 
+            <span class="truncate">${hName}</span>
+        </button>
+        
+        <button onclick="event.stopPropagation(); openSMS('${m.id}', 'away')" 
+            class="flex-1 py-2 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-blue-600 hover:text-white transition-all overflow-hidden">
+            <i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> 
+            <span class="truncate">${aName}</span>
+        </button>
+    </div>`;
+}
+
         innerHTML += `</div>`;
         card.innerHTML = innerHTML;
         active.appendChild(card);
@@ -1635,40 +1653,48 @@ async function setSponsorMessage() {
     }
 }
 
-function openSMS(matchId) {
+// FIND THIS FUNCTION IN YOUR SCRIPT.JS AND REPLACE IT COMPLETELY
+// --- REPLACE YOUR OLD openSMS FUNCTION WITH THIS ---
+function openSMS(matchId, target) {
     const m = state.matches.find(x => x.id === matchId);
     if (!m) return notify("Match not found", "x-circle");
 
     // 1. Identify Players
-    const homeP = state.players.find(p => p.id === m.homeId);
-    const awayP = state.players.find(p => p.id === m.awayId);
+    const h = state.players.find(p => p.id === m.homeId);
+    const a = state.players.find(p => p.id === m.awayId);
 
-    // 2. Who do we text? (We send to the Home Player usually, or you can add buttons for both)
-    const targetPhone = homeP.phone; 
+    if (!h || !a) return notify("Player data missing", "alert-circle");
 
-    if (!targetPhone) return notify("Player has no phone number", "phone-off");
+    // 2. Determine Recipient & Opponent based on which button was clicked
+    const recipient = target === 'home' ? h : a;
+    const opponent  = target === 'home' ? a : h;
 
-    // 3. The Professional Text Body
-    // (%0a is a code for "New Line")
-    const msg = `
-🏆 SLC TOURNAMENT UPDATE
-------------------------
-PHASE ${m.phase} FIXTURE CONFIRMED
+    // 3. Validate Phone
+    if (!recipient.phone) return notify(`${recipient.name} has no phone #`, "phone-off");
 
-👤 You: ${homeP.name}
-🆚 Opponent: ${awayP.name}
-📅 Date: ${m.scheduledDate || "TBA"}
-⏰ Deadline: ${m.deadline ? m.deadline.split('T')[1] : "23:59"}
+    // 4. Formatting Helpers
+    const deadlineTime = m.deadline ? m.deadline.split('T')[1] : "23:59";
+    const dateStr = m.scheduledDate || "TBA";
 
-⚠️ ACTION: Login to SLC-OS now to view details.
-Your ID: ${homeP.id}
+    // 5. Construct Message (Only shows Recipient's ID)
+    const msg = 
+`OFFICIAL SLC FIXTURE NOTICE
 
-- SLC Admin
-`.trim();
+Attention ${recipient.name.toUpperCase()},
 
-    // 4. Open the Native SMS App
-    // We use encodeURIComponent to ensure special characters work
-    window.open(`sms:${targetPhone}?body=${encodeURIComponent(msg)}`, '_self');
+Your Phase 0${m.phase} match against ${opponent.name.toUpperCase()} has been officially scheduled for ${dateStr}. This fixture is active immediately and carries a strict deadline of ${deadlineTime}.
+
+PROTOCOL REQUIREMENTS:
+1. Login to the SLC Portal immediately.
+2. Verify your opponent's SLC-ID.
+3. Submit the final scoreline before the deadline.
+
+Your verification ID is ${recipient.id}.
+
+- SLC OPERATIONS`;
+
+    // 6. Open SMS App (Single Recipient)
+    window.open(`sms:${recipient.phone}?body=${encodeURIComponent(msg)}`, '_self');
 }
 
 // --- NEW: PROFILE EDITING LOGIC ---
