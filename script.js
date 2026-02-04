@@ -678,11 +678,17 @@ function renderPlayerDashboard() {
                             <button onclick="setGlobalMatchDate()" class="px-5 py-3 bg-blue-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET DATE</button>
                         </div>
                         
-                        <label class="block text-[8px] font-black text-gold-500 uppercase mb-3 tracking-widest">Phase 3 Unlock Countdown</label>
+                                                <label class="block text-[8px] font-black text-gold-500 uppercase mb-3 tracking-widest">Phase 3 Unlock Countdown</label>
                         <div class="flex gap-2">
                             <input type="datetime-local" id="admin-p3-time-input" class="flex-1 bg-slate-950 border border-white/10 rounded-xl p-3 text-[10px] text-white outline-none focus:border-gold-500">
-                            <button onclick="setPhase3Lock()" class="px-5 py-3 bg-gold-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET TIMER</button>
+                            
+                            <button onclick="setPhase3Lock()" class="px-4 py-3 bg-gold-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET TIMER</button>
+                            
+                            <button onclick="clearPhase3Lock()" class="px-4 py-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all hover:bg-rose-500 hover:text-white">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
                         </div>
+
 
                         <div class="mt-6 pt-4 border-t border-white/5">
                             <label class="block text-[8px] font-black text-emerald-500 uppercase mb-3 tracking-widest">Sponsor / Announcement</label>
@@ -1511,6 +1517,26 @@ async function setPhase3Lock() {
     } catch(e) {
         notify("Error saving timer", "x-circle");
     }
+}
+// [NEW FUNCTION] clearPhase3Lock: Removes the countdown timer
+async function clearPhase3Lock() {
+    askConfirm("Stop & Clear Phase 3 Timer?", async () => {
+        try {
+            // Update Firebase to remove the time (set to null)
+            await db.collection("settings").doc("global").set({ 
+                phase3UnlockTime: null 
+            }, {merge: true});
+            
+            // Clear the input field visually
+            const input = document.getElementById('admin-p3-time-input');
+            if(input) input.value = "";
+
+            notify("Timer Cancelled!", "trash");
+        } catch(e) {
+            console.error(e);
+            notify("Error clearing timer", "x-circle");
+        }
+    });
 }
 
 // [NEW] revertMatchStats: Reverses points so we can edit cleanly
