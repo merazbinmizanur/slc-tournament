@@ -1,0 +1,365 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap');
+
+/* --- CORE VARIABLES & RESET --- */
+:root {
+    --emerald: #10b981;
+    --gold: #f59e0b;
+    --blue: #3b82f6;
+    --rose: #f43f5e;
+    --slate-900: #0f172a;
+    --slate-950: #020617;
+}
+
+body { 
+    font-family: 'Outfit', sans-serif; 
+    user-select: none; 
+    background-color: var(--slate-950); 
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+/* --- GLASS NAVBAR --- */
+.glass-navbar {
+    background: rgba(15, 23, 42, 0.9);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* --- MOVING BORDERS (CONIC GRADIENT ENGINE) --- */
+.moving-border, .moving-border-gold, .moving-border-blue, .moving-border-emerald {
+    position: relative;
+    overflow: hidden;
+}
+
+/* The Rotating Glow Layer */
+.moving-border::before, .moving-border-gold::before, .moving-border-blue::before, .moving-border-emerald::before {
+    content: ''; 
+    position: absolute; 
+    z-index: -2; 
+    left: -50%; 
+    top: -50%; 
+    width: 200%; 
+    height: 200%; 
+    animation: rotate 6s linear infinite;
+}
+
+/* The Solid Background Layer (Mask) */
+.moving-border::after, .moving-border-gold::after, .moving-border-blue::after, .moving-border-emerald::after {
+    content: ''; 
+    position: absolute; 
+    z-index: -1; 
+    inset: 1.2px; 
+    background: var(--slate-900); 
+    border-radius: inherit;
+}
+
+/* Color Variants */
+.moving-border::before { 
+    background: conic-gradient(transparent, var(--emerald), var(--gold), transparent 50%); 
+}
+.moving-border-gold::before { 
+    background: conic-gradient(transparent, var(--gold), #fff, transparent 40%); 
+}
+.moving-border-blue::before { 
+    background: conic-gradient(transparent, var(--blue), #00f2fe, transparent 50%); 
+}
+.moving-border-emerald::before { 
+    background: conic-gradient(transparent, var(--emerald), #fff, transparent 50%); 
+}
+
+@keyframes rotate { 
+    100% { transform: rotate(360deg); } 
+}
+
+/* --- ANIMATIONS --- */
+
+/* Standard Pop-In for centered elements */
+@keyframes modalPop { 
+    0% { transform: translateY(-20px) scale(0.9); opacity: 0; } 
+    100% { transform: translateY(0) scale(1); opacity: 1; } 
+}
+
+/* Special Pop-In for the Top-Centered Toast */
+@keyframes toastPop { 
+    0% { transform: translate(-50%, -30px) scale(0.85); opacity: 0; } 
+    100% { transform: translate(-50%, 0) scale(1); opacity: 1; } 
+}
+
+.animate-pop-in { 
+    animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
+}
+
+/* --- NOTIFICATION TOAST POSITIONING --- */
+#custom-toast {
+    position: fixed !important;
+    left: 50% !important;
+    top: 25px !important;
+    transform: translateX(-50%) !important;
+    z-index: 9999 !important;
+    width: max-content;
+}
+
+#custom-toast.animate-pop-in {
+    animation: toastPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* --- PRO DASHBOARD & MARKET COMPONENTS --- */
+
+/* Form Indicators (W/L/D Dots) */
+.form-dot { 
+    width: 8px; 
+    height: 8px; 
+    border-radius: 50%; 
+    display: inline-block; 
+}
+.form-w { 
+    background-color: var(--emerald); 
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5); 
+}
+.form-l { 
+    background-color: var(--rose); 
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.5); 
+}
+.form-d { 
+    background-color: #64748b; 
+}
+
+/* Achievement Badges */
+.achievement-badge {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.05) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    padding: 5px 12px;
+    border-radius: 10px;
+    font-size: 7px;
+    font-weight: 900;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Broker/Hunt Card Styling */
+.broker-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.6) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto 1.5rem auto;
+    display: block;
+    backdrop-filter: blur(10px);
+}
+
+/* --- LAYOUT & CENTERING FIXES --- */
+
+/* Force all dynamic lists to be centered and constrained */
+#schedule-list > div, 
+#recent-results-list > div, 
+#bracket-list > div, 
+#broker-board > div,
+#leaderboard-list > div,
+#view-settings > div {
+    width: 100% !important;
+    max-width: 340px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* Modal Internal Alignment */
+#modal-confirm .moving-border, 
+#modal-result .moving-border-gold {
+    margin: auto;
+}
+
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar { 
+    width: 4px; 
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb { 
+    background: rgba(255, 255, 255, 0.1); 
+    border-radius: 10px; 
+}
+
+/* Remove Number Input Arrows */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
+
+/* Phase Transitions */
+.animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Responsive constraints for larger screens on mobile app view */
+@media (min-width: 640px) {
+    #app-container {
+        border-left: 1px solid rgba(255,255,255,0.05);
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+}
+
+/* --- BRACKET TREE STYLING --- */
+.bracket-wrapper {
+    display: flex;
+    gap: 40px;
+    padding: 20px;
+    overflow-x: auto;
+    align-items: center;
+    justify-content: start;
+    min-height: 600px;
+}
+
+.bracket-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 20px;
+    min-width: 180px;
+}
+
+.bracket-match {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 12px;
+    position: relative;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Connectors */
+.bracket-match::after {
+    content: '';
+    position: absolute;
+    right: -40px;
+    top: 50%;
+    width: 40px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    z-index: -1;
+}
+
+.bracket-column:last-child .bracket-match::after { display: none; }
+
+.bracket-team {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.bracket-score-box {
+    display: flex;
+    gap: 4px;
+}
+
+.bracket-score-box span {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    border-radius: 4px;
+    color: #94a3b8;
+}
+
+.winner-text { color: var(--gold) !important; font-weight: 900; }
+
+/* --- FOOTER FIXES - NO BOX --- */
+#footer-container {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    position: relative;
+}
+
+/* Footer text container - completely clean */
+#footer-container > div:last-child {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding-top: 20px !important;
+    padding-bottom: 30px !important;
+}
+
+/* Footer text styling */
+#footer-container p {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+
+/* Remove any background from main sections */
+#app-container {
+    background-color: #020617;
+    border-bottom: none !important;
+}
+
+/* Ensure sections have proper spacing */
+section {
+    padding-bottom: 200px !important;
+    overflow-y: auto;
+    background: transparent !important;
+}
+
+/* Clean up any previous attempts */
+div[class*="pb-40"] {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* --- MARKET TICKER ANIMATIONS (UPDATED) --- */
+.ticker-container {
+    mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+}
+
+.ticker-track {
+    display: flex;
+    gap: 1.5rem;
+    width: fit-content;
+    /* Animation duration will be set by JS for constant speed */
+    animation-name: tickerScroll; 
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+}
+
+.ticker-track:hover {
+    animation-play-state: paused;
+}
+
+/* Seamless Loop: Moves exactly half the width (one set of content) */
+@keyframes tickerScroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
+
+.news-pill-content {
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--slate-900);
+    border-radius: 9999px;
+}
