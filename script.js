@@ -651,7 +651,9 @@ function renderPlayerDashboard() {
                                 <div class="flex justify-between items-center p-3 bg-slate-950/50 rounded-2xl border border-white/5">
                                     <div>
                                         <p class="text-[10px] font-bold text-white uppercase">${opponent?.name || "Unknown"}</p>
-                                        <p class="text-[7px] text-slate-500 font-black uppercase tracking-tighter">PHASE ${m.phase} • ${m.stakeType || 'STD'}</p>
+                                          <p class="text-[7px] text-slate-500 font-black uppercase tracking-tighter">
+    ${m.phase === 1 ? `PH-1 • ROUND ${m.round}` : `PH-${m.phase} • ${m.stakeType || 'STD'}`}
+</p>
                                     </div>
                                     <div class="text-right">
                                         <p class="text-[8px] font-black text-emerald-500 uppercase">${m.scheduledDate || 'TBA'}</p>
@@ -768,22 +770,60 @@ function renderPlayerDashboard() {
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
 
+// [UPDATED] Generator: Handles Even/Odd Logic + Round Labelling
 function askGeneratePhase1() {
-    askConfirm("Initialize Phase 1 Rotations?", async () => {
-        if (state.players.length < 4) return notify("Min 4 players required", "alert-circle");
-        let p = [...state.players];
+    askConfirm("Initialize Phase 1 Season?", async () => {
+        const pCount = state.players.length;
+        if (pCount < 3) return notify("Need 3+ players", "alert-circle");
+        
+        let p = [...state.players]; // Clone array to safely rotate
         const batch = db.batch();
-        for (let r = 0; r < 5; r++) {
-            p.push(p.splice(1, 1)[0]);
-            for (let i = 0; i < p.length / 2; i++) {
-                const mid = `p1-${r}-${i}-${Date.now()}`;
-                batch.set(db.collection("matches").doc(mid), { id: mid, homeId: p[i].id, awayId: p[p.length-1-i].id, phase: 1, status: 'scheduled' });
+        
+        // LOGIC: If Even, N-1 Rounds. If Odd, N Rounds.
+        // This ensures everyone plays everyone exactly once.
+        const totalRounds = (pCount % 2 === 0) ? pCount - 1 : pCount;
+
+        for (let r = 1; r <= totalRounds; r++) {
+            
+            // PAIRING LOGIC: Uses Math.floor to safely handle Odd numbers
+            // If Odd, the middle player is ignored this loop -> They get the "Bye"
+            for (let i = 0; i < Math.floor(p.length / 2); i++) {
+                const home = p[i];
+                const away = p[p.length - 1 - i];
+                
+                // ID includes Round Number to keep organized
+                const mid = `p1-r${r}-${home.id}-${away.id}`; 
+                
+                batch.set(db.collection("matches").doc(mid), { 
+                    id: mid, 
+                    homeId: home.id, 
+                    awayId: away.id, 
+                    phase: 1, 
+                    round: r, // <--- NEW: Saves Round Number
+                    status: 'scheduled',
+                    createdAt: Date.now()
+                });
+            }
+
+            // ROTATION LOGIC (The "Circle Method")
+            if (p.length % 2 === 0) {
+                // EVEN: Keep 1st player fixed, rotate the rest
+                // Moves 2nd player to the very end
+                const movingPlayer = p.splice(1, 1)[0];
+                p.push(movingPlayer);
+            } else {
+                // ODD: Rotate EVERYONE
+                // Moves 1st player to the very end
+                const movingPlayer = p.shift();
+                p.push(movingPlayer);
             }
         }
+
         await batch.commit();
-        notify("Phase 1 Live!", "calendar");
+        notify(`Generated ${totalRounds} Rounds!`, "calendar");
     });
 }
+
 
 function askGeneratePhase3() {
     askConfirm("Initialize Knockout Bracket?", async () => {
@@ -1085,6 +1125,7 @@ async function applyBulkSchedule() {
     }
 }
 
+// [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
 function renderSchedule() {
     const active = document.getElementById('schedule-list');
     const recent = document.getElementById('recent-results-list');
@@ -1095,7 +1136,7 @@ function renderSchedule() {
         const p1Exists = state.matches.some(m => m.phase === 1);
         if (p1Exists) {
             p1Btn.disabled = true;
-            p1Btn.innerText = "PH-1 ACTIVE";
+            p1Btn.innerText = "SEASON ACTIVE";
             p1Btn.classList.add('opacity-30', 'cursor-not-allowed', 'grayscale');
             p1Btn.classList.remove('bg-emerald-600', 'shadow-lg');
             p1Btn.onclick = null;
@@ -1106,10 +1147,14 @@ function renderSchedule() {
     active.innerHTML = '';
     recent.innerHTML = '';
     
-    const allScheduled = state.matches.filter(m => m.status === 'scheduled');
+    // Sort by Round First, then Date
+    const allScheduled = state.matches
+        .filter(m => m.status === 'scheduled')
+        .sort((a, b) => (a.round || 0) - (b.round || 0));
+
     const display = (state.isAdmin || state.bulkMode) ? allScheduled : allScheduled.filter(m => m.scheduledDate === state.viewingDate);
     
-    // Admin Controls (Same as before)
+    // Admin Controls
     if (state.isAdmin) {
         const controlsDiv = document.createElement('div');
         controlsDiv.className = "w-full max-w-[340px] mb-6 space-y-3";
@@ -1142,11 +1187,12 @@ function renderSchedule() {
         card.onclick = () => { if (state.bulkMode) toggleMatchSelection(m.id);
             else openResultEntry(m.id); };
         
+        // --- NEW DISPLAY LOGIC: Shows Round Number ---
         let innerHTML = `
             <div class="bg-slate-900 p-4 rounded-[1.5rem] h-full relative z-10">
                 <div class="flex justify-between items-center mb-3">
                     <span class="text-[7px] ${isSelected ? 'text-gold-500' : 'text-slate-500'} font-black uppercase transition-colors">${m.scheduledDate || 'NO DATE'}</span>
-                    <span class="text-[7px] text-blue-400 font-black uppercase">PH-${m.phase}</span>
+                    <span class="text-[7px] text-blue-400 font-black uppercase">PH-${m.phase} • R-${m.round || 1}</span>
                 </div>
                 
                 <div class="flex justify-between items-center gap-2">
@@ -1172,7 +1218,7 @@ function renderSchedule() {
         active.appendChild(card);
     });
     
-    // Recent Results Logic
+    // Recent Results Logic (No Changes needed here)
     const playedMatches = state.matches.filter(m => m.status === 'played').sort((a, b) => b.id.localeCompare(a.id));
     playedMatches.slice(0, 5).forEach(m => recent.appendChild(createMatchResultCard(m)));
     if (playedMatches.length > 5) recent.innerHTML += `<div class="w-full text-center mt-4"><button onclick="openFullHistory()" class="px-6 py-3 bg-white/5 border border-white/5 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 transition-all">View All Results (${playedMatches.length})</button></div>`;
