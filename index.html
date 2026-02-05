@@ -652,12 +652,6 @@
         </div>
     </div>
 </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="script.js"></script>
-    <!-- STANDINGS PREVIEW MODAL -->
 <div id="modal-download-preview" class="fixed inset-0 z-[980] bg-slate-950/98 hidden flex flex-col items-center justify-center p-4 backdrop-blur-xl">
     <div class="w-full max-w-md flex flex-col h-[85vh]">
         <div class="flex justify-between items-center mb-4 px-2">
@@ -678,5 +672,10 @@
         </div>
     </div>
 </div>
+    <div id="export-container" style="position: absolute; left: -9999px; top: 0; width: 600px; overflow: hidden; visibility: visible;"></div>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
