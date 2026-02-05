@@ -2342,7 +2342,7 @@ function showSchedulePreview() {
         </div>
 
         <div style="margin-top: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
-             <p style="color: #64748b; font-size: 7px; text-transform: uppercase; font-weight: bold; margin-bottom:5px;">OFFICIAL TOURNAMENT MANDATE</p>
+             <p style="color: #64748b; font-size: 7px; text-transform: uppercase; font-weight: bold; margin-bottom:5px;">OFFICIAL TOURNAMENT MATCHDAY SCHEDULE</p>
              <p style="color: #94a3b8; font-size: 7px; max-width: 90%; margin: 0 auto; line-height: 1.5;">
                 Fixtures must be completed by the <b style="color: #f59e0b;">BOLD DEADLINE</b> shown above. 
                 <br>Results not reported by the deadline may be subject to Admin Adjudication.
