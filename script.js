@@ -2202,43 +2202,74 @@ function showStandingsPreview() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+// [UPDATED] executeDownload: Uses the Off-Screen Container for stability
 async function executeDownload() {
-    const element = document.getElementById('capture-zone');
-    if (!element) return notify("Preview element not found", "x-circle");
-    
-    notify("Processing Image...", "download");
-    
-    try {
-        // We use a slight delay to ensure the DOM has painted the preview fully
-        await new Promise(resolve => setTimeout(resolve, 100));
+    const sourceElement = document.getElementById('capture-zone');
+    const exportContainer = document.getElementById('export-container');
 
-        const canvas = await html2canvas(element, {
-            useCORS: true,            // Fixes potential cross-origin image issues
-            allowTaint: false,        // Prevents the canvas from becoming "dirty"
-            backgroundColor: "#020617",
-            scale: 2,                 // Reduced from 3 to 2 to prevent memory crashes on mobile
-            logging: false,
-            width: element.offsetWidth,
-            height: element.offsetHeight
-        });
+    // Safety Checks
+    if (!sourceElement) return notify("Preview not found", "alert-circle");
+    if (!exportContainer) return notify("System Error: Export Container Missing", "alert-circle");
+    
+    notify("Generating High-Res Image...", "download");
+
+    try {
+        // 1. Prepare the Export Container
+        // Clear any previous data
+        exportContainer.innerHTML = ''; 
         
-        const image = canvas.toDataURL("image/png", 1.0);
+        // 2. Clone the Card
+        // We clone the node so we don't mess up the visible modal
+        const clone = sourceElement.cloneNode(true);
+        
+        // 3. Force Styles for Perfect Capture
+        // Ensure it fills the 600px container defined in index.html
+        clone.style.margin = "0";
+        clone.style.width = "100%"; 
+        clone.style.height = "auto";
+        clone.style.borderRadius = "0"; 
+        clone.style.boxShadow = "none";
+        
+        // Append clone to the off-screen container
+        exportContainer.appendChild(clone);
+        
+        // 4. WAIT for DOM Painting (Critical for Mobile)
+        // Give the browser 300ms to render the off-screen layout before capturing
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // 5. Capture the CLONE (inside the fixed 600px container)
+        const canvas = await html2canvas(clone, {
+            useCORS: true,       // Allow loading fonts/images
+            allowTaint: false,   // Security safety
+            backgroundColor: "#020617", // Force background color
+            scale: 2,            // 2x Resolution (Good balance for mobile)
+            width: 600,          // Force the width to match container
+            height: clone.scrollHeight, // Capture FULL height (even if long)
+            logging: false,
+            windowWidth: 1200    // Simulate desktop context for better CSS layout
+        });
+
+        // 6. Generate Link & Download
+        const image = canvas.toDataURL("image/png", 0.9);
         const link = document.createElement('a');
         
-        // Fix for mobile browsers: some require the link to be in the DOM
         link.style.display = 'none';
-        document.body.appendChild(link);
-        
-        link.download = `SLC-Standings-${new Date().getTime()}.png`;
         link.href = image;
+        link.download = `SLC-Standings-${Date.now()}.png`;
+        
+        document.body.appendChild(link);
         link.click();
         
-        // Clean up
-        document.body.removeChild(link);
-        closeModal('modal-download-preview');
-        notify("Saved to Device!", "check-circle");
+        // 7. Cleanup
+        setTimeout(() => {
+            document.body.removeChild(link);
+            exportContainer.innerHTML = ''; // Free up memory
+            closeModal('modal-download-preview');
+            notify("Saved to Gallery!", "check-circle");
+        }, 100);
+
     } catch (err) {
-        console.error("Capture Error: ", err);
-        notify("Download Failed: Try Again", "x-circle");
+        console.error("Capture Failed:", err);
+        notify("Download Failed. Try refreshing.", "x-circle");
     }
 }
