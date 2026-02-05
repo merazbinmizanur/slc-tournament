@@ -204,6 +204,18 @@ function switchAuthTab(type) {
 }
 
 async function registerPlayerOnline() {
+    // --- START UPDATE: CHECK LOCK STATUS ---
+    try {
+        const settingsDoc = await db.collection("settings").doc("global").get();
+        // If the document exists and registrationLocked is true, stop here.
+        if (settingsDoc.exists && settingsDoc.data().registrationLocked) {
+            return notify("REGISTRATION CLOSED: SEASON ACTIVE", "lock");
+        }
+    } catch (e) {
+        console.error("Error checking tournament lock:", e);
+    }
+    // --- END UPDATE ---
+
     const name = document.getElementById('reg-name').value.trim();
     const phone = document.getElementById('reg-phone').value.trim();
     // NEW: Get the Avatar Link
@@ -871,15 +883,22 @@ function renderPlayerDashboard() {
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
 
-// [UPDATED] Generator: Handles Even/Odd Logic + Round Labelling
+// [UPDATED] Generator: Handles Even/Odd Logic + Round Labelling + LOCKS REGISTRATION
 function askGeneratePhase1() {
-    askConfirm("Initialize Phase 1 Season?", async () => {
+    askConfirm("Initialize Phase 1 Season? Registration will be LOCKED.", async () => {
         const pCount = state.players.length;
         if (pCount < 3) return notify("Need 3+ players", "alert-circle");
         
         let p = [...state.players]; // Clone array to safely rotate
         const batch = db.batch();
         
+        // --- START UPDATE: LOCK THE TOURNAMENT ---
+        // This creates/updates the global settings doc to lock registration
+        batch.set(db.collection("settings").doc("global"), { 
+            registrationLocked: true 
+        }, { merge: true });
+        // --- END UPDATE ---
+
         // LOGIC: If Even, N-1 Rounds. If Odd, N Rounds.
         // This ensures everyone plays everyone exactly once.
         const totalRounds = (pCount % 2 === 0) ? pCount - 1 : pCount;
@@ -921,7 +940,7 @@ function askGeneratePhase1() {
         }
 
         await batch.commit();
-        notify(`Generated ${totalRounds} Rounds!`, "calendar");
+        notify(`Generated ${totalRounds} Rounds & Locked Registration!`, "lock");
     });
 }
 
