@@ -1317,9 +1317,22 @@ function renderSchedule() {
     if (state.isAdmin) {
         const controlsDiv = document.createElement('div');
         controlsDiv.className = "w-full max-w-[340px] mb-6 space-y-3";
+        
         if (!state.bulkMode) {
-            controlsDiv.innerHTML = `<button onclick="toggleBulkMode()" class="w-full py-3 bg-white/5 border border-white/10 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2"><i data-lucide="list-checks" class="w-3 h-3"></i> Bulk Schedule Mode</button>`;
+            // 1. Bulk Mode Button
+            controlsDiv.innerHTML = `
+            <button onclick="toggleBulkMode()" class="w-full py-3 bg-white/5 border border-white/10 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2">
+                <i data-lucide="list-checks" class="w-3 h-3"></i> Bulk Schedule Mode
+            </button>`;
+            
+            // 2. NEW: Download Schedule Button
+            controlsDiv.innerHTML += `
+            <button onclick="showSchedulePreview()" class="w-full mt-2 py-3 bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2">
+                <i data-lucide="download" class="w-3 h-3"></i> Download Official Schedule
+            </button>`;
+
         } else {
+            // Active Bulk Editor (No changes here)
             controlsDiv.innerHTML = `
                 <div class="moving-border-gold p-[1px] rounded-[1.6rem] animate-pop-in">
                     <div class="bg-slate-900 p-4 rounded-[1.5rem]">
@@ -1331,6 +1344,7 @@ function renderSchedule() {
         }
         active.appendChild(controlsDiv);
     }
+
     
     if (display.length === 0) active.innerHTML += `<p class="text-[8px] text-slate-600 font-black uppercase italic text-center py-4">No Active Fixtures</p>`;
     
@@ -2270,5 +2284,77 @@ async function executeDownload() {
         console.error("Download Error:", err);
         // This will now show the REAL error message on your screen
         notify(`Failed: ${err.message || "Unknown Error"}`, "x-circle");
+    }
+}
+// --- NEW FEATURE: SCHEDULE EXPORT GENERATOR ---
+function showSchedulePreview() {
+    // 1. Find matches that have BOTH a Date and a Deadline set
+    const validMatches = state.matches
+        .filter(m => m.status === 'scheduled' && m.scheduledDate && m.deadline)
+        .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.deadline.localeCompare(b.deadline));
+
+    if (validMatches.length === 0) return notify("Set Dates & Deadlines first!", "alert-circle");
+
+    // 2. Generate Header Text
+    const uniqueDates = [...new Set(validMatches.map(m => m.scheduledDate))];
+    const headerDate = uniqueDates.length === 1 ? uniqueDates[0] : "UPCOMING FIXTURES";
+
+    // 3. Create Rows HTML
+    const rows = validMatches.map(m => {
+        const h = state.players.find(p => p.id === m.homeId);
+        const a = state.players.find(p => p.id === m.awayId);
+        
+        // Extract Time from Deadline (e.g., "2024-02-10T23:00" -> "23:00")
+        const deadlineTime = m.deadline.split('T')[1] || "23:59";
+        
+        return `
+        <div class="schedule-export-row">
+            <div class="schedule-players">
+                <div class="schedule-p">
+                    ${getAvatarUI(h, "w-10", "h-10")}
+                    <span>${h?.name.split(' ')[0] || "TBD"}</span>
+                </div>
+                <div class="schedule-vs">VS</div>
+                <div class="schedule-p">
+                    ${getAvatarUI(a, "w-10", "h-10")}
+                    <span>${a?.name.split(' ')[0] || "TBD"}</span>
+                </div>
+            </div>
+            <div class="schedule-info">
+                <span class="schedule-badge">Matchday</span>
+                <span class="schedule-badge" style="color:#10b981; margin-top:2px;">Deadline: <b class="schedule-highlight">${deadlineTime}</b></span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // 4. Build the Full Export Card
+    const html = `
+    <div class="export-card" id="capture-zone">
+        <div class="export-header">
+            <p style="color: #10b981; font-size: 8px; font-weight: 900; letter-spacing: 4px; margin-bottom: 5px;">SYNTHEX LEGION CHRONICLES</p>
+            <h1 style="color: white; font-size: 16px; font-weight: 900; margin: 0; letter-spacing: 1px; text-transform:uppercase;">OFFICIAL SCHEDULE</h1>
+            <p style="color: #f59e0b; font-size: 9px; font-weight: 800; text-transform: uppercase; margin-top:5px;">${headerDate}</p>
+            <div style="width: 40px; height: 2px; background: #334155; margin: 10px auto;"></div>
+        </div>
+        
+        <div class="schedule-export-grid">
+            ${rows}
+        </div>
+
+        <div style="margin-top: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+             <p style="color: #64748b; font-size: 7px; text-transform: uppercase; font-weight: bold; margin-bottom:5px;">OFFICIAL TOURNAMENT MANDATE</p>
+             <p style="color: #94a3b8; font-size: 7px; max-width: 90%; margin: 0 auto; line-height: 1.5;">
+                Fixtures must be completed by the <b style="color: #f59e0b;">BOLD DEADLINE</b> shown above. 
+                <br>Results not reported by the deadline may be subject to Admin Adjudication.
+             </p>
+        </div>
+    </div>`;
+
+    // 5. Render to Modal
+    const previewArea = document.getElementById('preview-content-area');
+    if(previewArea) {
+        previewArea.innerHTML = html;
+        openModal('modal-download-preview');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 }
