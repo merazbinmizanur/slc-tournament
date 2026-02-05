@@ -883,64 +883,86 @@ function renderPlayerDashboard() {
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
 
-// [UPDATED] Generator: Handles Even/Odd Logic + Round Labelling + LOCKS REGISTRATION
+// [REPLACEMENT] Generator: Fixed 5 Rounds (Randomized)
 function askGeneratePhase1() {
-    askConfirm("Initialize Phase 1 Season? Registration will be LOCKED.", async () => {
-        const pCount = state.players.length;
-        if (pCount < 3) return notify("Need 3+ players", "alert-circle");
+    askConfirm("Generate Phase 1 (5 Matches Per Player)?", async () => {
+        const players = [...state.players];
         
-        let p = [...state.players]; // Clone array to safely rotate
+        // 1. Validation
+        if (players.length < 6) return notify("Need at least 6 players for random matchmaking", "alert-triangle");
+        if (players.length % 2 !== 0) return notify("Player count must be EVEN (e.g., 30). Add a dummy player.", "users");
+
         const batch = db.batch();
-        
-        // --- START UPDATE: LOCK THE TOURNAMENT ---
-        // This creates/updates the global settings doc to lock registration
-        batch.set(db.collection("settings").doc("global"), { 
-            registrationLocked: true 
-        }, { merge: true });
-        // --- END UPDATE ---
+        const history = new Set(); // Stores "ID1-ID2" strings to prevent duplicates
+        const MAX_ROUNDS = 5; // <--- STRICT LIMIT SET TO 5
 
-        // LOGIC: If Even, N-1 Rounds. If Odd, N Rounds.
-        // This ensures everyone plays everyone exactly once.
-        const totalRounds = (pCount % 2 === 0) ? pCount - 1 : pCount;
+        // Helper: Fisher-Yates Shuffle
+        const shuffle = (array) => {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        };
 
-        for (let r = 1; r <= totalRounds; r++) {
-            
-            // PAIRING LOGIC: Uses Math.floor to safely handle Odd numbers
-            // If Odd, the middle player is ignored this loop -> They get the "Bye"
-            for (let i = 0; i < Math.floor(p.length / 2); i++) {
-                const home = p[i];
-                const away = p[p.length - 1 - i];
-                
-                // ID includes Round Number to keep organized
-                const mid = `p1-r${r}-${home.id}-${away.id}`; 
+        // Helper: Create unique key for history check (smaller ID first)
+        const getPairKey = (id1, id2) => id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
+
+        // 2. Generation Loop (Runs exactly 5 times)
+        for (let r = 1; r <= MAX_ROUNDS; r++) {
+            let isValidRound = false;
+            let attempt = 0;
+            let roundPairs = [];
+
+            // Retry logic: If a shuffle creates a duplicate match, reshuffle and try again
+            while (!isValidRound && attempt < 100) {
+                shuffle(players);
+                roundPairs = [];
+                let collisionFound = false;
+
+                // Try pairing adjacent players (0vs1, 2vs3, etc.)
+                for (let i = 0; i < players.length; i += 2) {
+                    const p1 = players[i];
+                    const p2 = players[i + 1];
+                    const pairKey = getPairKey(p1.id, p2.id);
+
+                    if (history.has(pairKey)) {
+                        collisionFound = true;
+                        break; // Stop this shuffle, it's bad
+                    }
+                    roundPairs.push({ p1, p2, key: pairKey });
+                }
+
+                if (!collisionFound) {
+                    isValidRound = true; // We found a clean set of matches for this round!
+                }
+                attempt++;
+            }
+
+            if (!isValidRound) {
+                return notify(`Failed to generate Round ${r}. Try reset/again.`, "x-octagon");
+            }
+
+            // 3. Commit the valid round to Batch
+            roundPairs.forEach(pair => {
+                history.add(pair.key); // Mark these two as having played
+                const mid = `p1-r${r}-${pair.p1.id}-${pair.p2.id}`;
                 
                 batch.set(db.collection("matches").doc(mid), { 
                     id: mid, 
-                    homeId: home.id, 
-                    awayId: away.id, 
+                    homeId: pair.p1.id, 
+                    awayId: pair.p2.id, 
                     phase: 1, 
-                    round: r, // <--- NEW: Saves Round Number
+                    round: r, 
                     status: 'scheduled',
                     createdAt: Date.now()
                 });
-            }
-
-            // ROTATION LOGIC (The "Circle Method")
-            if (p.length % 2 === 0) {
-                // EVEN: Keep 1st player fixed, rotate the rest
-                // Moves 2nd player to the very end
-                const movingPlayer = p.splice(1, 1)[0];
-                p.push(movingPlayer);
-            } else {
-                // ODD: Rotate EVERYONE
-                // Moves 1st player to the very end
-                const movingPlayer = p.shift();
-                p.push(movingPlayer);
-            }
+            });
         }
 
         await batch.commit();
-        notify(`Generated ${totalRounds} Rounds & Locked Registration!`, "lock");
+        notify(`Success! Generated 5 Matches for ${players.length} Players.`, "calendar");
+        setTimeout(() => location.reload(), 1500);
     });
 }
 
