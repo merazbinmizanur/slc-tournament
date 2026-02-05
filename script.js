@@ -1864,6 +1864,7 @@ async function setSponsorMessage() {
     }
 }
 
+// [REPLACEMENT] openSMS: Added Round Number, Portal Link & 12H Time
 function openSMS(matchId, target) {
     const m = state.matches.find(x => x.id === matchId);
     if (!m) return notify("Match not found", "x-circle");
@@ -1874,36 +1875,52 @@ function openSMS(matchId, target) {
 
     if (!h || !a) return notify("Player data missing", "alert-circle");
 
-    // 2. Determine Recipient & Opponent based on which button was clicked
-    // If target is missing (fallback), default to 'home'
+    // 2. Determine Recipient & Opponent
     const recipient = target === 'away' ? a : h;
     const opponent  = target === 'away' ? h : a;
 
     // 3. Validate Recipient Phone
     if (!recipient.phone) return notify(`${recipient.name} has no phone #`, "phone-off");
 
-    // 4. Formatting Helpers
-    const deadlineTime = m.deadline ? m.deadline.split('T')[1] : "23:59";
-    const dateStr = m.scheduledDate || "TBA";
+    // 4. Formatting Helpers (Time & Date)
+    let deadlineTime = "11:59 PM";
+    
+    if (m.deadline) {
+        // Convert to Bangladesh Time (12-hour format)
+        deadlineTime = new Date(m.deadline).toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Dhaka',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    }
 
-    // 5. Construct Message (Specific to ONE person)
+    const dateStr = m.scheduledDate || "TBA";
+    
+    // Handle Round Number (Defaults to 'Standard' if not set, e.g. in Phase 2)
+    const roundLabel = m.round ? `Round ${m.round}` : "Fixture";
+
+    // 5. Construct Message
     const msg = 
 `OFFICIAL SLC FIXTURE NOTICE
 
 Attention ${recipient.name.toUpperCase()},
 
-Your Phase 0${m.phase} match against ${opponent.name.toUpperCase()} has been officially scheduled for ${dateStr}. This fixture is active immediately and carries a strict deadline of ${deadlineTime}.
+Your Phase 0${m.phase} (${roundLabel}) match against ${opponent.name.toUpperCase()} has been officially scheduled for ${dateStr}.
+This fixture is active immediately and carries a strict deadline of ${deadlineTime}.
 
 PROTOCOL REQUIREMENTS:
 1. Login to the SLC Portal immediately.
 2. Verify your opponent's SLC-ID.
 3. Submit the final scoreline before the deadline.
 
-Your verification ID is ${recipient.id}.
+PORTAL LINK:
+https://merazbinmizanur.github.io/slc-tournament
 
+Your verification ID is ${recipient.id}.
 - SLC OPERATIONS`;
 
-    // 6. Open SMS App (Single Recipient)
+    // 6. Open SMS App
     window.open(`sms:${recipient.phone}?body=${encodeURIComponent(msg)}`, '_self');
 }
 
