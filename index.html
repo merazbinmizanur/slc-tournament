@@ -169,7 +169,14 @@
     </div>
 </div>
 
+<div class="w-full max-w-[340px] mx-auto mb-6">
+        <button onclick="showStandingsPreview()" class="w-full py-4 bg-slate-900 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-2xl uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 hover:text-white transition-all shadow-xl">
+            <i data-lucide="eye" class="w-4 h-4"></i> Preview & Download Standings
+        </button>
+    </div>
 
+    <div id="leaderboard-list" class="space-y-4"></div>
+</section>
 
 <div id="modal-shop-details" class="fixed inset-0 z-[960] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
     <div class="moving-border-emerald rounded-[2.5rem] p-[1.5px] w-full max-w-xs animate-pop-in">
@@ -650,5 +657,26 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="script.js"></script>
+    <!-- STANDINGS PREVIEW MODAL -->
+<div id="modal-download-preview" class="fixed inset-0 z-[980] bg-slate-950/98 hidden flex flex-col items-center justify-center p-4 backdrop-blur-xl">
+    <div class="w-full max-w-md flex flex-col h-[85vh]">
+        <div class="flex justify-between items-center mb-4 px-2">
+            <h3 class="text-white font-black text-[10px] uppercase tracking-[0.3em]">Snapshot Preview</h3>
+            <button onclick="closeModal('modal-download-preview')" class="text-slate-500 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <!-- This is where the cool preview appears -->
+        <div id="preview-content-area" class="flex-1 overflow-y-auto rounded-[2rem] border border-white/10 shadow-2xl bg-[#020617] custom-scrollbar">
+            <!-- Dynamic Content Injected Here -->
+        </div>
+
+        <div class="mt-6 flex gap-3">
+            <button onclick="closeModal('modal-download-preview')" class="flex-1 py-4 bg-white/5 text-slate-500 text-[10px] font-black rounded-2xl uppercase tracking-widest border border-white/5">Cancel</button>
+            <button onclick="executeDownload()" class="flex-[2] py-4 bg-emerald-600 text-white text-[10px] font-black rounded-2xl uppercase tracking-widest shadow-lg shadow-emerald-600/20">Confirm & Save PNG</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
