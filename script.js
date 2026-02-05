@@ -1139,7 +1139,10 @@ async function saveMatchResult() {
 
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
-
+// NEW: Track who submitted the result
+matchUpdate.submittedBy = state.isAdmin ? "ADMIN" : verifyId;
+matchUpdate.submittedAt = Date.now();
+        
         // 5. CONSUME ITEMS (Remove them after the match)
         // Checks if items were active and removes them from the database
         const consumeItem = (pid, effectName) => {
@@ -1462,25 +1465,39 @@ function renderSchedule() {
 
 
 
-// [UPDATED] createMatchResultCard: Adds Admin Edit & Delete Buttons
+// Replace the entire createMatchResultCard function with this:
 function createMatchResultCard(m) {
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
     
+    // 1. FIND SUBMITTER FULL NAME
+    let submitterLabel = ""; 
+    if (m.submittedBy) {
+        if (m.submittedBy === 'ADMIN') {
+            submitterLabel = "By ADMIN";
+        } else {
+            const p = state.players.find(x => x.id === m.submittedBy);
+            // CHANGED: Removed .split(' ')[0] to show FULL NAME
+            submitterLabel = p ? `By ${p.name}` : "By Unknown";
+        }
+    }
+
     const div = document.createElement('div');
-    // Added 'relative' and 'group' for hover effects
     div.className = "bg-slate-900/40 p-3 rounded-2xl flex justify-between items-center border border-white/5 mb-2 w-full max-w-[340px] mx-auto opacity-70 relative group";
     
     div.innerHTML = `
         <span class="text-[9px] font-bold text-white truncate w-20">${h?.name || "TBD"}</span>
-        <div class="flex flex-col items-center">
-            <span class="text-xs font-black text-emerald-400">${m.score ? m.score.h : '0'}-${m.score ? m.score.a : '0'}</span>
-            <span class="text-[6px] text-slate-600 font-bold uppercase">PH-${m.phase}</span>
+        
+        <div class="flex flex-col items-center justify-center w-20">
+            <span class="text-xs font-black text-emerald-400 leading-none">${m.score ? m.score.h : '0'}-${m.score ? m.score.a : '0'}</span>
+            <span class="text-[6px] text-slate-600 font-bold uppercase mt-1">PH-${m.phase}</span>
+            
+            ${submitterLabel ? `<span class="text-[5px] text-gold-500 font-black uppercase tracking-wider mt-0.5 truncate max-w-[70px] block">${submitterLabel}</span>` : ''}
         </div>
+
         <span class="text-[9px] font-bold text-white truncate w-20 text-right">${a?.name || "TBD"}</span>
     `;
 
-    // NEW: Admin Controls (Only visible to Admin on hover)
     if (state.isAdmin) {
         const controls = document.createElement('div');
         controls.className = "absolute -right-2 -top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20";
