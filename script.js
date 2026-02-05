@@ -1925,43 +1925,54 @@ Your verification ID is ${recipient.id}.
 }
 
 
-// --- NEW: PROFILE EDITING LOGIC ---
-
+// [REPLACEMENT] openEditProfile: Pre-fills Name, Phone, and Avatar
 function openEditProfile() {
     const rawID = localStorage.getItem('slc_user_id');
     const p = state.players.find(x => x.id === rawID);
     
     if (!p) return notify("Profile data not found", "x-circle");
-
-    // Pre-fill existing data
+    
+    // 1. Pre-fill existing data
+    document.getElementById('edit-name').value = p.name || ""; // NEW
     document.getElementById('edit-phone').value = p.phone || "";
     document.getElementById('edit-avatar').value = p.avatar || "";
     
-    // Show Modal
+    // 2. Show Modal
     document.getElementById('modal-edit-profile').classList.remove('hidden');
 }
 
+// [REPLACEMENT] saveProfileChanges: Validates and Updates Name in Database
 async function saveProfileChanges() {
     const rawID = localStorage.getItem('slc_user_id');
+    
+    // 1. Get Values
+    const newName = document.getElementById('edit-name').value.trim(); // NEW
     const newPhone = document.getElementById('edit-phone').value.trim();
     const newAvatar = document.getElementById('edit-avatar').value.trim();
 
+    // 2. Validation
+    if (!newName) return notify("Name cannot be empty", "alert-circle");
     if (!newPhone) return notify("Phone number required", "alert-circle");
 
     try {
+        // 3. Update Database
+        // Changing the name here automatically updates it across the Leaderboard, Schedule, etc.
         await db.collection("players").doc(rawID).update({
+            name: newName,
             phone: newPhone,
             avatar: newAvatar
         });
-        
-        notify("Profile Updated Successfully!", "check-circle");
+
+        notify("Identity Updated Successfully!", "check-circle");
         document.getElementById('modal-edit-profile').classList.add('hidden');
-        renderPlayerDashboard(); // Refresh UI to show new avatar immediately
+        renderPlayerDashboard(); // Refresh UI immediately
+        
     } catch (e) {
         console.error(e);
         notify("Update Failed", "x-circle");
     }
 }
+
 
 // --- BOUNTY SHOP ENGINE ---
 
