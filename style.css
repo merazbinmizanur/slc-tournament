@@ -363,3 +363,97 @@ div[class*="pb-40"] {
     background: var(--slate-900);
     border-radius: 9999px;
 }
+/* Styling for the Downloadable Image */
+.export-card {
+    background: #020617; /* Slate 950 */
+    padding: 40px;
+    border: 2px solid #1e293b;
+    border-radius: 0;
+    color: white;
+}
+
+.export-header {
+    text-align: center;
+    margin-bottom: 30px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 20px;
+}
+
+.export-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.export-table th {
+    background: rgba(16, 185, 129, 0.1); /* Emerald */
+    color: #10b981;
+    font-size: 12px;
+    text-transform: uppercase;
+    padding: 12px;
+    text-align: left;
+    letter-spacing: 2px;
+}
+
+.export-table td {
+    padding: 15px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.export-rank { color: #f59e0b; width: 40px; }
+.export-name { color: white; }
+.export-bp { color: #10b981; text-align: right; }
+.export-stat { color: #64748b; text-align: center; font-size: 11px; }
+
+.export-footer {
+    margin-top: 30px;
+    text-align: center;
+    font-size: 10px;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+}
+
+
+
+/* High-Quality Export Card Styling */
+.export-card {
+    background: #020617; 
+    padding: 30px 20px;
+    color: white;
+    font-family: 'Outfit', sans-serif;
+}
+
+.export-header {
+    text-align: center;
+    margin-bottom: 25px;
+    border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+    padding-bottom: 20px;
+}
+
+.export-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.export-table th {
+    color: #10b981; /* Emerald */
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 12px 8px;
+    text-align: left;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.export-table td {
+    padding: 14px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.export-rank { color: #f59e0b; font-weight: 900; }
+.export-bp { color: #10b981; text-align: right; font-weight: 900; }
+.export-stat { color: #64748b; text-align: center; font-size: 10px; }
