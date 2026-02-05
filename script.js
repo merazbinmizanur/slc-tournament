@@ -2202,30 +2202,43 @@ function showStandingsPreview() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-// 2. EXECUTE THE ACTUAL DOWNLOAD
 async function executeDownload() {
-  const element = document.getElementById('capture-zone');
-  notify("Downloading Standing...", "download");
-  
-  try {
-    const canvas = await html2canvas(element, {
-      backgroundColor: "#020617",
-      scale: 3, // Very high quality
-      logging: false,
-      windowWidth: element.scrollWidth,
-      windowHeight: element.scrollHeight
-    });
+    const element = document.getElementById('capture-zone');
+    if (!element) return notify("Preview element not found", "x-circle");
     
-    const image = canvas.toDataURL("image/png");
-    const link = document.createElement('a');
-    link.download = `SLC-Standings-${new Date().getTime()}.png`;
-    link.href = image;
-    link.click();
+    notify("Processing Image...", "download");
     
-    closeModal('modal-download-preview');
-    notify("Saved to Device!", "check-circle");
-  } catch (err) {
-    notify("Download Failed", "x-circle");
-    console.error(err);
-  }
+    try {
+        // We use a slight delay to ensure the DOM has painted the preview fully
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const canvas = await html2canvas(element, {
+            useCORS: true,            // Fixes potential cross-origin image issues
+            allowTaint: false,        // Prevents the canvas from becoming "dirty"
+            backgroundColor: "#020617",
+            scale: 2,                 // Reduced from 3 to 2 to prevent memory crashes on mobile
+            logging: false,
+            width: element.offsetWidth,
+            height: element.offsetHeight
+        });
+        
+        const image = canvas.toDataURL("image/png", 1.0);
+        const link = document.createElement('a');
+        
+        // Fix for mobile browsers: some require the link to be in the DOM
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        
+        link.download = `SLC-Standings-${new Date().getTime()}.png`;
+        link.href = image;
+        link.click();
+        
+        // Clean up
+        document.body.removeChild(link);
+        closeModal('modal-download-preview');
+        notify("Saved to Device!", "check-circle");
+    } catch (err) {
+        console.error("Capture Error: ", err);
+        notify("Download Failed: Try Again", "x-circle");
+    }
 }
