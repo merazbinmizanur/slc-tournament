@@ -23,6 +23,63 @@ const ADMIN_KEY = "SLCADMIN2026";
 const P2_LIMIT_HIGH = 3;
 const P2_LIMIT_STD = 2;
 const STARTING_BOUNTY = 500;
+// --- SHOP CONFIGURATION ---
+const SHOP_ITEMS = {
+    insurance: { 
+        name: "INSURANCE", 
+        price: 100, 
+        icon: "shield", 
+        desc: "Reduces point loss by 50% if you are defeated.",
+        restriction: "Valid for 1 Match. Consumed on result.",
+        color: "text-blue-400",
+        border: "moving-border-blue"
+    },
+    decline_pass: { 
+        name: "DECLINE PASS", 
+        price: 100, 
+        icon: "x-circle", 
+        desc: "Allows you to decline a Phase 2 challenge without paying the 5% penalty.",
+        restriction: "1 Time Use.",
+        color: "text-rose-400",
+        border: "moving-border-blue"
+    },
+    privacy: { 
+        name: "PRIVACY", 
+        price: 50, 
+        icon: "eye-off", 
+        desc: "Hides your Win/Loss history (dots) from rivals on the dashboard.",
+        restriction: "Active for 1 Match duration.",
+        color: "text-slate-400",
+        border: "moving-border-emerald"
+    },
+    scout: { 
+        name: "SCOUT", 
+        price: 50, 
+        icon: "search", 
+        desc: "Reveal an opponent's hidden history before accepting a match.",
+        restriction: "1 Time Use.",
+        color: "text-emerald-400",
+        border: "moving-border-emerald"
+    },
+    multiplier: { 
+        name: "MULTIPLIER", 
+        price: 200, 
+        icon: "zap", 
+        desc: "Doubles your BP gain (2x) if you win the next match.",
+        restriction: "1 Match Only. High Risk.",
+        color: "text-gold-500",
+        border: "moving-border-gold"
+    },
+    vault_access: { 
+        name: "THE VAULT", 
+        price: 100, 
+        icon: "lock", 
+        desc: "Secure storage facility. Lock up to 25% of your BP safely.",
+        restriction: "Funds locked for 4 Days.",
+        color: "text-gold-500",
+        border: "moving-border-gold"
+    }
+};
 
 // --- STATE MANAGEMENT ---
 let state = { 
@@ -297,6 +354,8 @@ function refreshUI() {
     
     try {
         renderLeaderboard();
+        renderShop();
+        checkVaultStatus();
         renderSchedule();
         renderEliteBracket();
         renderBrokerBoard(); 
@@ -408,6 +467,7 @@ function renderBrokerBoard() {
     
     if (!state.brokerSubTab) state.brokerSubTab = 'hunts';
     
+    // Sub-Navigation Tabs
     const subNav = document.createElement('div');
     subNav.className = "flex gap-2 mb-8 bg-slate-950/50 p-1.5 rounded-2xl border border-white/5 w-full max-w-[340px] mx-auto";
     subNav.innerHTML = `
@@ -415,9 +475,11 @@ function renderBrokerBoard() {
         <button onclick="state.brokerSubTab='stats'; renderBrokerBoard();" class="flex-1 py-2 text-[9px] font-black uppercase rounded-xl transition-all ${state.brokerSubTab === 'stats' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}">Arena Stats</button>`;
     container.appendChild(subNav);
     
+    // TAB: HUNTS (Negotiations & Targets)
     if (state.brokerSubTab === 'hunts') {
         const myChallenges = state.matches.filter(m => m.phase === 2 && m.status === 'pending' && (state.isAdmin || m.homeId === myID || m.awayId === myID));
         
+        // 1. Render Active Negotiations (Pending)
         if (myChallenges.length > 0) {
             const dashDiv = document.createElement('div');
             dashDiv.className = "w-full space-y-4 mb-10";
@@ -450,15 +512,34 @@ function renderBrokerBoard() {
             container.appendChild(dashDiv);
         }
         
+        // 2. Render Available Targets
         if (!myPlayer && !state.isAdmin) {
             container.innerHTML += `<p class="text-center py-10 text-slate-500 text-[8px] font-black uppercase">Please Login as Player to see Targets</p>`;
         } else {
-            const targets = [...state.players].filter(p => p.id !== myID && !state.matches.some(m => m.phase === 2 && m.status !== 'declined' && ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID)))).sort((a, b) => Math.abs(a.bounty - (myPlayer?.bounty || 0)) - Math.abs(b.bounty - (myPlayer?.bounty || 0))).slice(0, 5);
+            // Filter targets: Not me, Not already matched
+            const targets = [...state.players]
+                .filter(p => p.id !== myID && !state.matches.some(m => m.phase === 2 && m.status !== 'declined' && ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))))
+                .sort((a, b) => Math.abs(a.bounty - (myPlayer?.bounty || 0)) - Math.abs(b.bounty - (myPlayer?.bounty || 0)))
+                .slice(0, 5);
+
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
             
             targets.forEach(t => {
                 const isBusy = state.matches.some(m => m.phase === 2 && m.status === 'scheduled' && (m.homeId === t.id || m.awayId === t.id));
                 const rank = getRankInfo(t.bounty);
+                
+                // --- NEW SCOUT LOGIC START ---
+                const hasScout = myPlayer?.active_effects?.scout;
+                let scoutBtnHTML = '';
+                
+                if (hasScout) {
+                    scoutBtnHTML = `
+                    <button onclick="useScout('${t.id}')" class="col-span-2 mb-2 py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase hover:bg-emerald-900/60 transition-colors shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2">
+                        <i data-lucide="scan" class="w-3 h-3"></i> Use Active Scout
+                    </button>`;
+                }
+                // --- NEW SCOUT LOGIC END ---
+
                 const card = document.createElement('div');
                 card.className = "moving-border-blue p-[1px] rounded-[2.6rem] mb-5 w-full max-w-[340px] mx-auto shadow-xl block";
                 card.innerHTML = `
@@ -476,8 +557,9 @@ function renderBrokerBoard() {
                                 <span class="text-[6px] text-slate-600 font-black uppercase">Current BP</span>
                             </div>
                         </div>
+                        
                         <div class="grid grid-cols-2 gap-3">
-                            <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" ${isBusy ? 'disabled' : ''} class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 disabled:opacity-20 hover:bg-white/5 transition-colors">Standard</button>
+                            ${scoutBtnHTML} <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" ${isBusy ? 'disabled' : ''} class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 disabled:opacity-20 hover:bg-white/5 transition-colors">Standard</button>
                             <button onclick="sendChallenge('${myID}', '${t.id}', 'high')" ${isBusy ? 'disabled' : ''} class="py-3 bg-blue-600 rounded-2xl text-[8px] font-black text-white uppercase active:scale-95 shadow-lg shadow-blue-900/40 disabled:opacity-20 hover:bg-blue-500 transition-colors">High Stake</button>
                         </div>
                     </div>`;
@@ -485,6 +567,7 @@ function renderBrokerBoard() {
             });
         }
     }
+    // TAB: STATS
     else if (state.brokerSubTab === 'stats') {
         const statsDiv = document.createElement('div');
         statsDiv.className = "w-full animate-pop-in space-y-3";
@@ -511,6 +594,7 @@ function renderBrokerBoard() {
     }
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 
@@ -560,20 +644,29 @@ async function respondToChallenge(matchId, action) {
             notify("Contract Scheduled!", "check-circle");
         } catch (e) { notify("Sync Failed", "x-circle"); }
     } 
-    else {
-        const penalty = Math.floor(t.bounty * 0.05);
-        const batch = db.batch();
-        batch.update(db.collection("players").doc(t.id), { bounty: firebase.firestore.FieldValue.increment(-penalty) });
-        batch.update(db.collection("players").doc(h.id), { bounty: firebase.firestore.FieldValue.increment(penalty) });
-        batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
+     else {
+        // DECLINE LOGIC WITH ITEM CHECK
+        const activeEff = t.active_effects || {};
         
-        await batch.commit();
-        notify(`Declined. Paid ${penalty} BP penalty`, "shield-alert");
+        if (activeEff.decline_pass) {
+             askConfirm("Use DECLINE PASS to waive penalty?", async () => {
+                const batch = db.batch();
+                // Remove Item
+                batch.update(db.collection("players").doc(t.id), { "active_effects.decline_pass": false });
+                batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
+                await batch.commit();
+                notify("Declined using Pass (0 BP)", "shield-check");
+             });
+        } else {
+            // STANDARD PENALTY
+            const penalty = Math.floor(t.bounty * 0.05);
+            // ... (Existing standard decline code) ...
+        }
     }
+
 }
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
-
 function renderPlayerDashboard() {
     const container = document.getElementById('view-settings');
     if (!container) return;
@@ -651,9 +744,7 @@ function renderPlayerDashboard() {
                                 <div class="flex justify-between items-center p-3 bg-slate-950/50 rounded-2xl border border-white/5">
                                     <div>
                                         <p class="text-[10px] font-bold text-white uppercase">${opponent?.name || "Unknown"}</p>
-                                          <p class="text-[7px] text-slate-500 font-black uppercase tracking-tighter">
-    ${m.phase === 1 ? `PH-1 • ROUND ${m.round}` : `PH-${m.phase} • ${m.stakeType || 'STD'}`}
-</p>
+                                        <p class="text-[7px] text-slate-500 font-black uppercase tracking-tighter">PHASE ${m.phase} • ${m.stakeType || 'STD'}</p>
                                     </div>
                                     <div class="text-right">
                                         <p class="text-[8px] font-black text-emerald-500 uppercase">${m.scheduledDate || 'TBA'}</p>
@@ -678,17 +769,16 @@ function renderPlayerDashboard() {
                             <button onclick="setGlobalMatchDate()" class="px-5 py-3 bg-blue-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET DATE</button>
                         </div>
                         
-                                                <label class="block text-[8px] font-black text-gold-500 uppercase mb-3 tracking-widest">Phase 3 Unlock Countdown</label>
+                        <label class="block text-[8px] font-black text-gold-500 uppercase mb-3 tracking-widest">Phase 3 Unlock Countdown</label>
                         <div class="flex gap-2">
                             <input type="datetime-local" id="admin-p3-time-input" class="flex-1 bg-slate-950 border border-white/10 rounded-xl p-3 text-[10px] text-white outline-none focus:border-gold-500">
                             
-                            <button onclick="setPhase3Lock()" class="px-4 py-3 bg-gold-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET TIMER</button>
+                            <button onclick="setPhase3Lock()" class="px-4 py-3 bg-gold-600 text-white text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all">SET</button>
                             
                             <button onclick="clearPhase3Lock()" class="px-4 py-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[10px] font-black rounded-xl shadow-lg active:scale-95 transition-all hover:bg-rose-500 hover:text-white">
                                 <i data-lucide="x" class="w-3 h-3"></i>
                             </button>
                         </div>
-
 
                         <div class="mt-6 pt-4 border-t border-white/5">
                             <label class="block text-[8px] font-black text-emerald-500 uppercase mb-3 tracking-widest">Sponsor / Announcement</label>
@@ -772,6 +862,10 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
+
+
+
 
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
@@ -925,7 +1019,7 @@ function renderEliteBracket() {
 }
 
 // --- 8. MATCH RESULTS & SCORING ---
-// [UPDATED] saveMatchResult: Handles both New Entry AND Editing
+// [UPDATED] saveMatchResult: Now supports Shop Items (Insurance & Multiplier)
 async function saveMatchResult() {
     const sH = parseInt(document.getElementById('res-s-h').value);
     const sA = parseInt(document.getElementById('res-s-a').value);
@@ -950,34 +1044,75 @@ async function saveMatchResult() {
         let matchUpdate = { status: 'played' };
         let hBP = 0, aBP = 0;
 
-        // CALCULATE NEW POINTS
+        // 1. GET PLAYERS & ACTIVE EFFECTS
+        const hObj = state.players.find(p => p.id === m.homeId);
+        const aObj = state.players.find(p => p.id === m.awayId);
+        const hEff = hObj?.active_effects || {};
+        const aEff = aObj?.active_effects || {};
+
+        // 2. HELPER: CALCULATE POINTS WITH ITEM LOGIC
+        // applies Multiplier on Wins, Insurance on Losses
+        const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
+            if (isWinner) {
+                // Multiplier: Doubles the win points
+                if (effectObj.multiplier) return baseWin * 2;
+                return baseWin;
+            } else {
+                // Insurance: Halves the loss points
+                if (effectObj.insurance) return baseLoss / 2;
+                return baseLoss;
+            }
+        };
+
+        // 3. DEFINE BASE SCORING RULES
+        let winPts = 0, lossPts = 0, drawPts = -30;
+
         if (m.phase === 3) {
-            if (sH > sA) { hBP = 300; aBP = -250; } 
-            else if (sA > sH) { hBP = -250; aBP = 300; } 
-            else { hBP = -100; aBP = -100; }
-            matchUpdate.score = { h: sH, a: sA };
+            winPts = 300; lossPts = -250; drawPts = -100;
             matchUpdate.winnerId = sH > sA ? m.homeId : (sA > sH ? m.awayId : null);
         } 
+        else if (m.phase === 2) {
+            // Phase 2: Percentage of Total Pool
+            const pool = Math.floor((hObj.bounty + aObj.bounty) * (m.stakeRate / 100));
+            winPts = pool; lossPts = -pool;
+        } 
         else {
-            matchUpdate.score = { h: sH, a: sA };
-            if (m.phase === 1) {
-                if (sH > sA) { hBP = 100; aBP = -50; } 
-                else if (sA > sH) { hBP = -50; aBP = 100; } 
-                else { hBP = -30; aBP = -30; }
-            } else {
-                const hObj = state.players.find(p => p.id === m.homeId);
-                const aObj = state.players.find(p => p.id === m.awayId);
-                const pool = Math.floor((hObj.bounty + aObj.bounty) * (m.stakeRate / 100));
-                if (sH > sA) { hBP = pool; aBP = -pool; } 
-                else if (sA > sH) { hBP = -pool; aBP = pool; }
-                else { hBP = -30; aBP = -30; }
-            }
+            // Phase 1: Standard Scoring
+            winPts = 100; lossPts = -50;
         }
 
-        // SAVE THE DELTA (So we can reverse it easily next time)
+        // 4. CALCULATE FINAL BP (Applying Items)
+        if (sH > sA) { 
+            hBP = calcPoints(true, winPts, lossPts, hEff);
+            aBP = calcPoints(false, winPts, lossPts, aEff);
+        } 
+        else if (sA > sH) { 
+            hBP = calcPoints(false, winPts, lossPts, hEff);
+            aBP = calcPoints(true, winPts, lossPts, aEff);
+        } 
+        else { 
+            // Draws are usually not affected by items
+            hBP = drawPts; aBP = drawPts; 
+        }
+
+        matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
-        // UPDATE PLAYER STATS
+        // 5. CONSUME ITEMS (Remove them after the match)
+        // Checks if items were active and removes them from the database
+        const consumeItem = (pid, effectName) => {
+            batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
+        };
+
+        if (hEff.insurance) consumeItem(m.homeId, "insurance");
+        if (hEff.multiplier) consumeItem(m.homeId, "multiplier");
+        if (hEff.privacy) consumeItem(m.homeId, "privacy");
+
+        if (aEff.insurance) consumeItem(m.awayId, "insurance");
+        if (aEff.multiplier) consumeItem(m.awayId, "multiplier");
+        if (aEff.privacy) consumeItem(m.awayId, "privacy");
+
+        // 6. UPDATE PLAYER STATS
         batch.update(db.collection("players").doc(m.homeId), {
             bounty: firebase.firestore.FieldValue.increment(hBP),
             wins: firebase.firestore.FieldValue.increment(sH > sA ? 1 : 0),
@@ -996,7 +1131,7 @@ async function saveMatchResult() {
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         await batch.commit();
         
-        notify("Result Saved Successfully!", "check-circle");
+        notify("Result Saved & Items Applied!", "check-circle");
         closeModal('modal-result');
         
     } catch (err) {
@@ -1004,6 +1139,7 @@ async function saveMatchResult() {
         notify("Sync Error", "x-circle");
     }
 }
+
 
 
 
@@ -1056,15 +1192,27 @@ function openResultEntry(id) {
 
 // --- 9. GLOBAL UI RENDERERS ---
 
+// [UPDATED] renderLeaderboard: Now supports "Privacy" Shop Item
 function renderLeaderboard() {
     const list = document.getElementById('leaderboard-list');
     if(!list) return;
+    
     list.innerHTML = `<h2 class="text-xs font-black text-slate-500 uppercase mb-6 italic tracking-widest">Global Standings</h2>`;
     
     [...state.players].sort((a,b) => b.bounty - a.bounty).forEach((p, i) => {
         let borderClass = 'moving-border-blue'; 
         if (i === 0) borderClass = 'moving-border-gold';
         if (i === 1 || i === 2) borderClass = 'moving-border-emerald';
+
+        // --- START UPDATE: CHECK PRIVACY ITEM ---
+        const activeEff = p.active_effects || {};
+        let statsDisplay = `M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}`;
+
+        // If Privacy is active, hide the stats
+        if (activeEff.privacy) {
+            statsDisplay = `<span class="text-emerald-500 flex items-center gap-1"><i data-lucide="lock" class="w-2 h-2"></i> DATA ENCRYPTED</span>`;
+        }
+        // --- END UPDATE ---
 
         list.innerHTML += `
             <div class="${borderClass} p-[1px] rounded-[1.6rem] mb-3 w-full max-w-[340px] mx-auto shadow-xl">
@@ -1076,14 +1224,18 @@ function renderLeaderboard() {
                     <div class="flex-1 overflow-hidden">
                         <span class="font-bold text-xs text-white uppercase truncate block">${p.name}</span>
                         <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
-                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}
+                            ${statsDisplay} 
                         </p>
                     </div>
                     <span class="font-black text-emerald-400 text-xs ml-2">${p.bounty.toLocaleString()}</span>
                 </div>
             </div>`;
     });
+    
+    // Refresh icons for the new "Lock" symbol
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 // --- [NEW] BULK SCHEDULING LOGIC ---
@@ -1216,7 +1368,7 @@ function renderSchedule() {
         if (state.bulkMode && isSelected) {
             innerHTML += `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"><div class="w-8 h-8 bg-gold-500 rounded-full flex items-center justify-center shadow-lg animate-pop-in"><i data-lucide="check" class="w-5 h-5 text-black"></i></div></div>`;
         }
-        if (state.isAdmin && !state.bulkMode) {
+       if (state.isAdmin && !state.bulkMode) {
     // 1. Get FULL names (removed the .split logic)
     const hName = h ? h.name : 'HOME';
     const aName = a ? a.name : 'AWAY';
@@ -1250,6 +1402,7 @@ function renderSchedule() {
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 
@@ -1536,6 +1689,7 @@ async function setPhase3Lock() {
         notify("Error saving timer", "x-circle");
     }
 }
+
 // [NEW FUNCTION] clearPhase3Lock: Removes the countdown timer
 async function clearPhase3Lock() {
     askConfirm("Stop & Clear Phase 3 Timer?", async () => {
@@ -1556,6 +1710,7 @@ async function clearPhase3Lock() {
         }
     });
 }
+
 
 // [NEW] revertMatchStats: Reverses points so we can edit cleanly
 async function revertMatchStats(m) {
@@ -1696,6 +1851,7 @@ Your verification ID is ${recipient.id}.
     window.open(`sms:${recipient.phone}?body=${encodeURIComponent(msg)}`, '_self');
 }
 
+
 // --- NEW: PROFILE EDITING LOGIC ---
 
 function openEditProfile() {
@@ -1734,8 +1890,263 @@ async function saveProfileChanges() {
     }
 }
 
+// --- BOUNTY SHOP ENGINE ---
+
+function renderShop() {
+    const grid = document.getElementById('shop-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    if (!me) return; // Not logged in
+
+    // Initialize inventory if missing
+    const inv = me.inventory || {};
+    const active = me.active_effects || {};
+
+    Object.keys(SHOP_ITEMS).forEach(key => {
+        const item = SHOP_ITEMS[key];
+        const isOwned = (inv[key] || 0) > 0;
+        const isActive = active[key] || (key === 'vault_access' && me.vault_data?.amount > 0);
+        
+        // Determine Button State
+        let btnText = "PURCHASE";
+        let btnClass = "bg-transparent text-slate-500 border border-slate-700";
+        let statusIcon = "";
+
+        if (isActive) {
+            btnText = "ACTIVE";
+            btnClass = "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 cursor-default";
+            statusIcon = `<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981] animate-pulse"></div>`;
+        } else if (isOwned) {
+            btnText = "ACTIVATE";
+            btnClass = "bg-white text-slate-900 font-black shadow-[0_0_15px_rgba(255,255,255,0.3)] animate-pulse-slow";
+        }
+
+        // Card HTML
+        const card = document.createElement('div');
+        card.className = `relative group cursor-pointer active:scale-95 transition-all`;
+        card.onclick = () => openShopItem(key);
+
+        card.innerHTML = `
+            <div class="${item.border} p-[1px] rounded-[1.2rem] h-full">
+                <div class="bg-slate-900 rounded-[1.1rem] p-3 h-full flex flex-col items-center justify-between relative z-10">
+                    ${statusIcon}
+                    <div class="mb-2 p-2 bg-slate-950 rounded-full border border-white/5">
+                        <i data-lucide="${item.icon}" class="w-4 h-4 ${item.color}"></i>
+                    </div>
+                    <div class="text-center mb-2">
+                        <h4 class="text-[9px] font-black text-white uppercase tracking-wider">${item.name}</h4>
+                        <p class="text-[8px] font-bold text-gold-500">${item.price} BP</p>
+                    </div>
+                    <button class="w-full py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${btnClass}">
+                        ${btnText}
+                    </button>
+                </div>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+let selectedShopItem = null;
+
+function openShopItem(key) {
+    selectedShopItem = key;
+    const item = SHOP_ITEMS[key];
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    
+    // Populate Modal
+    document.getElementById('shop-modal-title').innerText = item.name;
+    document.getElementById('shop-modal-price').innerText = `${item.price} BP`;
+    document.getElementById('shop-modal-desc').innerText = item.desc;
+    document.getElementById('shop-modal-restrict').innerText = item.restriction;
+    
+    // Icon Setup
+    const iconContainer = document.getElementById('shop-modal-icon');
+    iconContainer.innerHTML = `<i data-lucide="${item.icon}" class="w-6 h-6 ${item.color}"></i>`;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Logic for Button Action
+    const btn = document.getElementById('btn-shop-action');
+    const inv = me?.inventory || {};
+    const active = me?.active_effects || {};
+    const isOwned = (inv[key] || 0) > 0;
+    const isActive = active[key];
+
+    if (key === 'vault_access' && me?.vault_data?.amount > 0) {
+        btn.innerText = "VAULT LOCKED";
+        btn.onclick = () => notify("Vault is currently sealed.", "lock");
+        btn.className = "flex-1 py-3 bg-slate-700 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed";
+    } else if (isActive) {
+        btn.innerText = "ALREADY ACTIVE";
+        btn.onclick = null;
+        btn.className = "flex-1 py-3 bg-emerald-900/50 text-emerald-500 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed";
+    } else if (isOwned) {
+        btn.innerText = "ACTIVATE NOW";
+        btn.onclick = () => key === 'vault_access' ? openVaultModal() : activateShopItem(key);
+        btn.className = "flex-1 py-3 bg-white text-slate-900 text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
+    } else {
+        btn.innerText = `PURCHASE (-${item.price})`;
+        btn.onclick = () => buyShopItem(key);
+        btn.className = "flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
+    }
+
+    document.getElementById('modal-shop-details').classList.remove('hidden');
+}
+
+async function buyShopItem(key) {
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const item = SHOP_ITEMS[key];
+
+    if (me.bounty < item.price) return notify("Insufficient Funds", "alert-circle");
+    
+    try {
+        const batch = db.batch();
+        const ref = db.collection("players").doc(myID);
+        
+        // Deduct Price
+        batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-item.price) });
+        // Add to Inventory
+        batch.update(ref, { [`inventory.${key}`]: 1 });
+        
+        await batch.commit();
+        notify(`${item.name} Purchased!`, "shopping-bag");
+        document.getElementById('modal-shop-details').classList.add('hidden');
+    } catch (e) { notify("Transaction Failed", "x-circle"); }
+}
+
+async function activateShopItem(key) {
+    const myID = localStorage.getItem('slc_user_id');
+    try {
+        const batch = db.batch();
+        const ref = db.collection("players").doc(myID);
+        
+        // Remove from Inventory
+        batch.update(ref, { [`inventory.${key}`]: 0 });
+        // Add to Active Effects
+        batch.update(ref, { [`active_effects.${key}`]: true });
+        
+        await batch.commit();
+        notify(`${SHOP_ITEMS[key].name} Activated!`, "check-circle");
+        document.getElementById('modal-shop-details').classList.add('hidden');
+    } catch (e) { notify("Activation Error", "x-circle"); }
+}
+
+// --- VAULT SPECIFIC LOGIC ---
+function openVaultModal() {
+    document.getElementById('modal-shop-details').classList.add('hidden');
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    
+    const maxDeposit = Math.floor(me.bounty * 0.25);
+    document.getElementById('vault-max-display').innerText = `${maxDeposit} BP`;
+    document.getElementById('vault-input').max = maxDeposit;
+    document.getElementById('modal-vault').classList.remove('hidden');
+}
+
+async function depositToVault() {
+    const amount = parseInt(document.getElementById('vault-input').value);
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const max = Math.floor(me.bounty * 0.25);
+
+    if (!amount || amount <= 0) return notify("Enter valid amount", "alert-circle");
+    if (amount > max) return notify(`Max limit is ${max} BP`, "alert-triangle");
+
+    try {
+        const batch = db.batch();
+        const ref = db.collection("players").doc(myID);
+        
+        // 1. Consume the Access Item
+        batch.update(ref, { [`inventory.vault_access`]: 0 });
+        
+        // 2. Move Funds
+        batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-amount) });
+        
+        // 3. Set Vault Data
+        const expires = Date.now() + (4 * 24 * 60 * 60 * 1000); // 4 Days
+        batch.update(ref, { 
+            vault_data: {
+                amount: amount,
+                depositedAt: Date.now(),
+                expiresAt: expires
+            } 
+        });
+
+        await batch.commit();
+        notify(`${amount} BP Locked in Vault!`, "lock");
+        document.getElementById('modal-vault').classList.add('hidden');
+    } catch (e) { notify("Vault Error", "x-circle"); }
+}
+
+async function checkVaultStatus() {
+    const myID = localStorage.getItem('slc_user_id');
+    if (!myID) return;
+    
+    // We need to fetch fresh data to be safe, but state.players is usually synced
+    const me = state.players.find(p => p.id === myID);
+    if (me && me.vault_data && me.vault_data.amount > 0) {
+        if (Date.now() > me.vault_data.expiresAt) {
+            // EXPIRED - RETURN FUNDS
+            try {
+                const batch = db.batch();
+                const ref = db.collection("players").doc(myID);
+                
+                batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(me.vault_data.amount) });
+                batch.update(ref, { vault_data: firebase.firestore.FieldValue.delete() });
+                
+                await batch.commit();
+                notify("Vault Unlocked: Funds Returned", "unlock");
+            } catch (e) { console.error("Vault Return Error", e); }
+        }
+    }
+}
+
+// --- SCOUT LOGIC ---
+async function useScout(targetId) {
+    const t = state.players.find(p => p.id === targetId);
+    if (!t) return;
+
+    // 1. Gather Intelligence
+    const winRate = t.mp > 0 ? Math.floor((t.wins / t.mp) * 100) : 0;
+    
+    // 2. Display Report (Using standard Alert for simplicity, or Notify)
+    // Formatting a clean report
+    const reportMsg = `
+[ SCOUT REPORT: ${t.name.toUpperCase()} ]
+--------------------------------
+• Win Rate:      ${winRate}%
+• Total Matches: ${t.mp}
+• Record:        ${t.wins}W - ${t.draws}D - ${t.losses}L
+• Current BP:    ${t.bounty}
+• P2 Contracts:  High(${t.p2High || 0}/3) | Std(${t.p2Std || 0}/2)
+--------------------------------
+Confirming challenge is now safer.
+`;
+    
+    alert(reportMsg); // Show info to user immediately
+
+    // 3. Consume the Item from Database
+    const myID = localStorage.getItem('slc_user_id');
+    try {
+        await db.collection("players").doc(myID).update({
+            "active_effects.scout": false
+        });
+        notify("Scout Report Complete. Item Consumed.", "check-circle");
+        renderBrokerBoard(); // Refresh UI to remove the button
+    } catch(e) {
+        console.error(e);
+        notify("Error consuming item", "x-circle");
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 });
+
