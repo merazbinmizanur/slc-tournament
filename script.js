@@ -27,7 +27,7 @@ const STARTING_BOUNTY = 500;
 const SHOP_ITEMS = {
     insurance: { 
         name: "INSURANCE", 
-        price: 100, 
+        price: 15, 
         icon: "shield", 
         desc: "Reduces point loss by 50% if you are defeated.",
         restriction: "Valid for 1 Match. Consumed on result.",
@@ -36,7 +36,7 @@ const SHOP_ITEMS = {
     },
     decline_pass: { 
         name: "DECLINE PASS", 
-        price: 100, 
+        price: 30, 
         icon: "x-circle", 
         desc: "Allows you to decline a Phase 2 challenge without paying the 5% penalty.",
         restriction: "1 Time Use.",
@@ -45,7 +45,7 @@ const SHOP_ITEMS = {
     },
     privacy: { 
         name: "PRIVACY", 
-        price: 50, 
+        price: 15, 
         icon: "eye-off", 
         desc: "Hides your Win/Loss history (dots) from rivals on the dashboard.",
         restriction: "Active for 1 Match duration.",
@@ -54,7 +54,7 @@ const SHOP_ITEMS = {
     },
     scout: { 
         name: "SCOUT", 
-        price: 50, 
+        price: 10, 
         icon: "search", 
         desc: "Reveal an opponent's hidden history before accepting a match.",
         restriction: "1 Time Use.",
@@ -63,7 +63,7 @@ const SHOP_ITEMS = {
     },
     multiplier: { 
         name: "MULTIPLIER", 
-        price: 200, 
+        price: 40, 
         icon: "zap", 
         desc: "Doubles your BP gain (2x) if you win the next match.",
         restriction: "1 Match Only. High Risk.",
@@ -72,7 +72,7 @@ const SHOP_ITEMS = {
     },
     vault_access: { 
         name: "THE VAULT", 
-        price: 100, 
+        price: 20, 
         icon: "lock", 
         desc: "Secure storage facility. Lock up to 25% of your BP safely.",
         restriction: "Funds locked for 4 Days.",
@@ -80,6 +80,7 @@ const SHOP_ITEMS = {
         border: "moving-border-gold"
     }
 };
+
 
 // --- STATE MANAGEMENT ---
 let state = { 
