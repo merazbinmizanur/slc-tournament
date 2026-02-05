@@ -2151,3 +2151,81 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 });
 
+// 1. GENERATE THE PREVIEW
+function showStandingsPreview() {
+  const previewArea = document.getElementById('preview-content-area');
+  const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+  
+  let tableRows = sortedPlayers.map((p, i) => `
+        <tr>
+            <td class="export-rank">#${i + 1}</td>
+            <td style="color:white; text-transform:uppercase; font-size:11px;">${p.name}</td>
+            <td class="export-stat">${p.mp || 0}</td>
+            <td class="export-stat">${p.wins || 0}</td>
+            <td class="export-stat">${p.draws || 0}</td>
+            <td class="export-stat">${p.losses || 0}</td>
+            <td class="export-bp">${(p.bounty || 0).toLocaleString()}</td>
+        </tr>
+    `).join('');
+  
+  previewArea.innerHTML = `
+        <div class="export-card" id="capture-zone">
+            <div class="export-header">
+                <p style="color: #10b981; font-size: 8px; font-weight: 900; letter-spacing: 5px; margin-bottom: 5px;">SYNTHEX LEGION CHRONICLES</p>
+                <h1 style="color: white; font-size: 18px; font-weight: 900; margin: 0; letter-spacing: -0.5px;">BOUNTY STANDINGS</h1>
+                <div style="width: 40px; h: 2px; background: #f59e0b; margin: 10px auto;"></div>
+                <p style="color: #475569; font-size: 7px; text-transform: uppercase;">Generated: ${new Date().toLocaleDateString()} | System Stable</p>
+            </div>
+            <table class="export-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Hunter</th>
+                        <th style="text-align:center">M</th>
+                        <th style="text-align:center">W</th>
+                        <th style="text-align:center">D</th>
+                        <th style="text-align:center">L</th>
+                        <th style="text-align:right">BP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+            <div style="margin-top: 30px; text-align: center; color: #1e293b; font-size: 6px; letter-spacing: 2px; font-weight: 900; text-transform: uppercase;">
+                Official SLC Tournament Operating System v3.0.1
+            </div>
+        </div>
+    `;
+  
+  openModal('modal-download-preview');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// 2. EXECUTE THE ACTUAL DOWNLOAD
+async function executeDownload() {
+  const element = document.getElementById('capture-zone');
+  notify("Downloading Standing...", "download");
+  
+  try {
+    const canvas = await html2canvas(element, {
+      backgroundColor: "#020617",
+      scale: 3, // Very high quality
+      logging: false,
+      windowWidth: element.scrollWidth,
+      windowHeight: element.scrollHeight
+    });
+    
+    const image = canvas.toDataURL("image/png");
+    const link = document.createElement('a');
+    link.download = `SLC-Standings-${new Date().getTime()}.png`;
+    link.href = image;
+    link.click();
+    
+    closeModal('modal-download-preview');
+    notify("Saved to Device!", "check-circle");
+  } catch (err) {
+    notify("Download Failed", "x-circle");
+    console.error(err);
+  }
+}
