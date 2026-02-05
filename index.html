@@ -141,6 +141,84 @@
 
 
             <section id="view-home" class="absolute inset-0 p-6 overflow-y-auto custom-scrollbar pb-32">
+<div id="shop-section" class="mb-10 w-full max-w-[340px] mx-auto animate-pop-in">
+    
+    <div class="moving-border-gold p-[1.5px] rounded-[2.5rem] shadow-2xl relative">
+        
+        <div class="bg-slate-900 rounded-[2.4rem] p-5 relative z-10">
+            
+            <div class="text-center mb-4">
+                <h2 class="text-xs font-black text-gold-500 uppercase tracking-[0.25em] flex items-center justify-center gap-2 italic mb-3">
+                    <i data-lucide="shopping-bag" class="w-4 h-4"></i> The Bounty Shop
+                </h2>
+            </div>
+
+            <div class="bg-slate-950/50 border border-white/5 rounded-2xl p-4 mb-5 text-justify shadow-inner">
+                <p class="text-[8px] text-slate-400 font-medium leading-relaxed uppercase tracking-wide">
+                    This is the official tactical marketplace. Here, Hunters can exchange <span class="text-gold-500 font-black">Bounty Points (BP)</span> for specialized equipment to gain a strategic edge in the Arena. 
+                    <br><br>
+                    Whether you need protection from losses or intelligence on your rivals, these assets are designed to help you survive. 
+                    <span class="text-emerald-500 font-bold block mt-2 text-center">⚠ Note: Items must be manually ACTIVATED after purchase.</span>
+                </p>
+            </div>
+
+            <div id="shop-grid" class="grid grid-cols-3 gap-2">
+                </div>
+
+        </div>
+    </div>
+</div>
+
+
+
+<div id="modal-shop-details" class="fixed inset-0 z-[960] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
+    <div class="moving-border-emerald rounded-[2.5rem] p-[1.5px] w-full max-w-xs animate-pop-in">
+        <div class="bg-slate-900 rounded-[2.4rem] p-6 text-center border border-white/5 relative">
+            
+            <div id="shop-modal-icon" class="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-lg"></div>
+            
+            <h3 id="shop-modal-title" class="text-white font-black text-sm mb-1 uppercase tracking-widest"></h3>
+            <div class="flex justify-center mb-4">
+                <span id="shop-modal-price" class="text-[9px] font-black text-gold-500 bg-gold-500/10 px-2 py-1 rounded-lg border border-gold-500/20 uppercase"></span>
+            </div>
+
+            <div class="text-left bg-slate-950/50 p-4 rounded-2xl border border-white/5 mb-6 space-y-3">
+                <div>
+                    <p class="text-[7px] text-slate-500 font-black uppercase mb-1">Function</p>
+                    <p id="shop-modal-desc" class="text-[9px] text-slate-300 font-bold leading-relaxed"></p>
+                </div>
+                <div>
+                    <p class="text-[7px] text-slate-500 font-black uppercase mb-1">Restriction</p>
+                    <p id="shop-modal-restrict" class="text-[9px] text-rose-400 font-bold leading-relaxed"></p>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('modal-shop-details').classList.add('hidden')" class="flex-1 py-3 bg-white/5 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest border border-white/5">Cancel</button>
+                <button id="btn-shop-action" class="flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg active:scale-95 transition-all">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="modal-vault" class="fixed inset-0 z-[970] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
+    <div class="moving-border-gold rounded-[2.5rem] p-[1.5px] w-full max-w-xs animate-pop-in">
+        <div class="bg-slate-900 rounded-[2.4rem] p-6 text-center border border-white/5">
+            <h3 class="text-gold-500 font-black text-xs mb-4 uppercase tracking-[0.2em]">The Vault</h3>
+            
+            <div class="bg-slate-950 p-4 rounded-2xl border border-white/10 mb-4">
+                <p class="text-[8px] text-slate-500 font-black uppercase mb-1">Available to Lock</p>
+                <p id="vault-max-display" class="text-xl font-black text-white">0 BP</p>
+                <p class="text-[7px] text-slate-600 italic mt-1">Max 25% of Current Balance</p>
+            </div>
+
+            <input type="number" id="vault-input" placeholder="Enter Amount" class="w-full p-3 mb-4 bg-slate-800 border border-white/10 rounded-xl text-center text-white text-xs font-bold outline-none focus:border-gold-500">
+
+            <button onclick="depositToVault()" class="w-full py-3 bg-gold-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg active:scale-95 transition-all">Lock Funds (4 Days)</button>
+            <button onclick="document.getElementById('modal-vault').classList.add('hidden')" class="mt-3 text-[8px] text-slate-500 font-black uppercase">Cancel</button>
+        </div>
+    </div>
+</div>
+
                 <div id="leaderboard-list" class="space-y-4"></div>
             </section>
 
@@ -535,6 +613,7 @@
         <h2 id="champion-name" class="text-4xl font-black text-white uppercase italic tracking-tighter mb-8 drop-shadow-lg"></h2>
         <button onclick="document.getElementById('champion-overlay').classList.add('hidden')" class="px-8 py-3 bg-white/5 border border-white/10 text-white text-[10px] font-black rounded-full uppercase tracking-widest active:scale-95 transition-all">Dismiss</button>
     </div>
+
 <div id="modal-edit-profile" class="fixed inset-0 z-[950] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
     <div class="moving-border-blue rounded-[2.5rem] p-[1.5px] w-full max-w-sm animate-pop-in">
         <div class="bg-slate-900 rounded-[2.4rem] p-8 text-center border border-white/5 relative">
