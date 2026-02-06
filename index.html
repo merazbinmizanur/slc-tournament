@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SLC BOUNTY HUNTER - Tournament Pro (Online)</title>
+    <title>SLC BOUNTY HUNTER - Tournament Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -121,7 +121,7 @@
                     </div>
                 </div>
                 <div>
-                    <h1 class="font-black text-white text-xs tracking-tight uppercase italic">SLC Bounty Hunter</h1>
+                    <h1 class="font-black text-white text-xs tracking-tight uppercase italic">SLC BOUNTY HUNTER</h1>
                     <div id="phase-indicator" class="mt-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-black rounded uppercase border border-emerald-500/20 w-fit">Phase 1</div>
                 </div>
             </div>
@@ -140,42 +140,162 @@
 <div class="fixed inset-0 top-[140px] overflow-hidden z-0">
 
 
-            <section id="view-home" class="absolute inset-0 p-6 overflow-y-auto custom-scrollbar pb-32">
-<div id="shop-section" class="mb-10 w-full max-w-[340px] mx-auto animate-pop-in">
-    
-    <div class="moving-border-gold p-[1.5px] rounded-[2.5rem] shadow-2xl relative">
+<section id="view-home" class="absolute inset-0 p-6 overflow-y-auto custom-scrollbar pb-32">
+    <div class="w-full max-w-[340px] mx-auto">
         
-        <div class="bg-slate-900 rounded-[2.4rem] p-5 relative z-10">
+        <!-- Professional Boxes Section -->
+        <div class="grid grid-cols-1 gap-6 mb-8">
             
-            <div class="text-center mb-4">
-                <h2 class="text-xs font-black text-gold-500 uppercase tracking-[0.25em] flex items-center justify-center gap-2 italic mb-3">
-                    <i data-lucide="shopping-bag" class="w-4 h-4"></i> The Bounty Shop
-                </h2>
-            </div>
-
-            <div class="bg-slate-950/50 border border-white/5 rounded-2xl p-4 mb-5 text-justify shadow-inner">
-                <p class="text-[8px] text-slate-400 font-medium leading-relaxed uppercase tracking-wide">
-                    This is the official tactical marketplace. Here, Hunters can exchange <span class="text-gold-500 font-black">Bounty Points (BP)</span> for specialized equipment to gain a strategic edge in the Arena. 
-                    <br><br>
-                    Whether you need protection from losses or intelligence on your rivals, these assets are designed to help you survive. 
-                    <span class="text-emerald-500 font-bold block mt-2 text-center">⚠ Note: Items must be manually ACTIVATED after purchase.</span>
-                </p>
-            </div>
-
-            <div id="shop-grid" class="grid grid-cols-3 gap-2">
+            <!-- Shop Box -->
+            <div id="shop-box" onclick="openShopSection()" class="moving-border-gold p-[1.5px] rounded-[2.5rem] shadow-2xl cursor-pointer active:scale-[0.98] transition-transform">
+                <div class="bg-slate-900 rounded-[2.4rem] p-6 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-24 h-24 bg-gold-500/10 rounded-full -translate-y-8 translate-x-8 blur-xl"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-gold-500/20 to-transparent border border-gold-500/30 flex items-center justify-center">
+                            <i data-lucide="shopping-bag" class="w-8 h-8 text-gold-400"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-sm font-black text-white uppercase italic tracking-tight">The Bounty Shop</h3>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase tracking-wider mt-1">Acquire tactical equipment</p>
+                            <div class="flex gap-2 mt-2">
+                                <span class="text-[7px] bg-gold-500/10 text-gold-500 px-2 py-0.5 rounded-full border border-gold-500/20">Insurance</span>
+                                <span class="text-[7px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full border border-emerald-500/20">Scout</span>
+                                <span class="text-[7px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full border border-blue-500/20">The Vault</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-
+            </div>
+            
+            <!-- Top Scorers Box -->
+            <div id="scorers-box" onclick="openTopScorersSection()" class="moving-border-emerald p-[1.5px] rounded-[2.5rem] shadow-2xl cursor-pointer active:scale-[0.98] transition-transform">
+                <div class="bg-slate-900 rounded-[2.4rem] p-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-24 h-24 bg-emerald-500/10 rounded-full -translate-y-8 -translate-x-8 blur-xl"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-500/30 flex items-center justify-center">
+                            <i data-lucide="target" class="w-8 h-8 text-emerald-400"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-sm font-black text-white uppercase italic tracking-tight">Golden Boot Race</h3>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase tracking-wider mt-1">Score goals, earn bonus BP</p>
+                            <div class="mt-2 bg-slate-950/50 p-2 rounded-xl border border-white/5">
+                                <p class="text-[7px] text-slate-300 font-bold leading-tight">
+                                    <span class="text-gold-500">STRIKE HARD, SCORE BIG</span> •
+                                    <span class="text-emerald-500">THE GOLDEN BOAT</span> •
+                                    <span class="text-blue-500">REWARDS THE FIERCEST HUNTER!</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shop Section (Initially Hidden) -->
+        <div id="shop-section" class="hidden mb-10 w-full max-w-[340px] mx-auto">
+            <div class="moving-border-gold p-[1.5px] rounded-[2.5rem] shadow-2xl relative">
+                <div class="bg-slate-900 rounded-[2.4rem] p-5 relative z-10">
+                    <div class="flex items-center justify-between mb-6">
+                        <button onclick="closeAllSections()" class="p-2 bg-white/5 rounded-xl border border-white/5 text-slate-400">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                        </button>
+                        <h2 class="text-xs font-black text-gold-500 uppercase tracking-[0.25em] italic">The Bounty Shop</h2>
+                        <div class="w-8"></div>
+                    </div>
+                    
+                    <div class="bg-slate-950/50 border border-white/5 rounded-2xl p-4 mb-5 text-justify shadow-inner">
+                        <p class="text-[8px] text-slate-400 font-medium leading-relaxed uppercase tracking-wide">
+                            This is the official tactical marketplace. Here, Hunters can exchange <span class="text-gold-500 font-black">Bounty Points (BP)</span> for specialized equipment to gain a strategic edge in the Arena.
+                            <br><br>
+                            Whether you need protection from losses or intelligence on your rivals, these assets are designed to help you survive.
+                            <span class="text-emerald-500 font-bold block mt-2 text-center">⚠ Note: Items must be manually ACTIVATED after purchase.</span>
+                        </p>
+                    </div>
+                    
+                    <div id="shop-grid" class="grid grid-cols-3 gap-2"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Top Scorers Section (Initially Hidden) -->
+        <div id="scorers-full-section" class="hidden mb-10 w-full max-w-[340px] mx-auto">
+            <div class="moving-border-emerald p-[1.5px] rounded-[2.5rem] shadow-2xl relative">
+                <div class="bg-slate-900 rounded-[2.4rem] p-5 relative z-10">
+                    <div class="flex items-center justify-between mb-6">
+                        <button onclick="closeAllSections()" class="p-2 bg-white/5 rounded-xl border border-white/5 text-slate-400">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                        </button>
+                        <h2 class="text-xs font-black text-emerald-500 uppercase tracking-[0.25em] italic">Golden Boot Race</h2>
+                        <div class="w-8"></div>
+                    </div>
+                    
+                    <div class="bg-slate-950/50 border border-white/5 rounded-2xl p-4 mb-5 text-center shadow-inner">
+                        <p class="text-[8px] text-slate-400 font-medium leading-relaxed uppercase tracking-wide">
+                            Every goal counts in the <span class="text-gold-500 font-black">Golden Boot Race</span>. Accumulate goals throughout the tournament to earn substantial Bounty Point bonuses.
+                            <br><br>
+                            <span class="text-emerald-500 font-bold">Scoring Milestones:</span>
+                        </p>
+                        <div class="grid grid-cols-2 gap-2 mt-3">
+                            <div class="bg-slate-900/50 p-2 rounded-lg border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-bold">15 Goals</p>
+                                <p class="text-[9px] text-emerald-400 font-black">+50 BP</p>
+                            </div>
+                            <div class="bg-slate-900/50 p-2 rounded-lg border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-bold">30 Goals</p>
+                                <p class="text-[9px] text-emerald-400 font-black">+100 BP</p>
+                            </div>
+                            <div class="bg-slate-900/50 p-2 rounded-lg border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-bold">50 Goals</p>
+                                <p class="text-[9px] text-blue-400 font-black">+150 BP</p>
+                            </div>
+                            <div class="bg-slate-900/50 p-2 rounded-lg border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-bold">80 Goals</p>
+                                <p class="text-[9px] text-rose-400 font-black">+200 BP</p>
+                            </div>
+                        </div>
+                        <div class="mt-3 bg-gradient-to-r from-gold-500/10 to-transparent p-2 rounded-lg border border-gold-500/20">
+                            <p class="text-[8px] text-gold-500 uppercase font-bold tracking-widest">Grand Prize: 100+ Goals</p>
+                            <p class="text-xs text-white font-black">+500 BP Bonus</p>
+                        </div>
+                        <p class="text-[7px] text-slate-500 italic mt-3">Attack aggressively and maximize your scoring output. The Golden Boot awaits the most lethal hunter!</p>
+                    </div>
+                    
+                    <div id="top-scorers-list" class="space-y-4"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Download Schedule Button -->
+        <button onclick="showStandingsPreview()" class="w-full mb-6 py-4 bg-slate-900 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-2xl uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 hover:text-white transition-all shadow-xl">
+            <i data-lucide="download" class="w-4 h-4"></i> Download Official Standings
+        </button>
+        
+        <!-- Top 5 Leaderboard -->
+        <div id="top5-leaderboard-container" class="mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xs font-black text-slate-500 uppercase italic tracking-widest">Top 5 Hunters</h2>
+                <div class="flex items-center gap-2">
+                    <button id="toggle-leaderboard-view" onclick="toggleLeaderboardView()" class="text-[7px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
+                        View Full
+                    </button>
+                </div>
+            </div>
+            <div id="top5-leaderboard-list" class="space-y-3"></div>
+        </div>
+        
+        <!-- Full Leaderboard (Hidden Initially) -->
+        <div id="full-leaderboard-container" class="hidden mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xs font-black text-emerald-500 uppercase italic tracking-widest">Global Standings</h2>
+                <div class="flex items-center gap-2">
+                    <button id="toggle-leaderboard-view-back" onclick="toggleLeaderboardView()" class="text-[7px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+                        Back to Top 5
+                    </button>
+                </div>
+            </div>
+            <div id="full-leaderboard-list" class="space-y-3"></div>
         </div>
     </div>
-</div>
-
-<div class="w-full max-w-[340px] mx-auto mb-6">
-        <button onclick="showStandingsPreview()" class="w-full py-4 bg-slate-900 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-2xl uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 hover:text-white transition-all shadow-xl">
-            <i data-lucide="eye" class="w-4 h-4"></i> Preview & Download Standings
-        </button>
-    </div>
-
-    <div id="leaderboard-list" class="space-y-4"></div>
 </section>
 
 <div id="modal-shop-details" class="fixed inset-0 z-[960] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
@@ -452,7 +572,53 @@
                 <span class="text-[9px] font-bold text-white">&lt; 500 BP</span>
             </div>
         </div>
+        
+        <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl relative overflow-hidden">
+    <div class="absolute -left-10 -bottom-10 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl"></div>
+
+    <h2 class="text-xs font-black text-emerald-500 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
+        <i data-lucide="target" class="w-3 h-3"></i> Golden Boot Milestones
+    </h2>
+
+    <p class="text-[9px] text-slate-400 font-medium mb-6 relative z-10">
+        Goals are currency. Reach these career totals to unlock automatic <span class="text-white font-bold">Bounty Point (BP)</span> injections.
+    </p>
+
+    <div class="space-y-2 relative z-10">
+        
+        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
+            <span class="text-[9px] font-black text-slate-300 uppercase">15 Goals</span>
+            <span class="text-[9px] font-black text-emerald-500">+50 BP</span>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
+            <span class="text-[9px] font-black text-slate-300 uppercase">30 Goals</span>
+            <span class="text-[9px] font-black text-emerald-400">+100 BP</span>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-blue-500/20">
+            <span class="text-[9px] font-black text-white uppercase">50 Goals</span>
+            <span class="text-[9px] font-black text-blue-400">+150 BP</span>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-rose-500/20">
+            <span class="text-[9px] font-black text-white uppercase">80 Goals</span>
+            <span class="text-[9px] font-black text-rose-500">+200 BP</span>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-gradient-to-r from-gold-500/10 to-transparent rounded-xl border border-gold-500/30 mt-2">
+            <div class="flex items-center gap-2">
+                <i data-lucide="crown" class="w-3 h-3 text-gold-500"></i>
+                <span class="text-[9px] font-black text-gold-500 uppercase tracking-widest">100+ Goals</span>
+            </div>
+            <span class="text-[11px] font-black text-white drop-shadow-md">+500 BP</span>
+        </div>
+
     </div>
+</div>
+
+    </div>
+
 
     <div>
         <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">02. Scoring Protocol</h3>
@@ -688,5 +854,5 @@
 
 <script src="script.js"></script>
 </body>
-</html>
 
+</html>
