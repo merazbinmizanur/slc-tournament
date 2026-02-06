@@ -2805,13 +2805,13 @@ function showSchedulePreview(page = 1) {
             <div class="schedule-players">
                 <div class="schedule-p">
                     ${getAvatarUI(h, "w-10", "h-10")}
-                    <span style="font-size: 3px;">${h?.name || "TBD"}</span>
+                    <span style="font-size: 6px;">${h?.name || "TBD"}</span>
 
                 </div>
                 <div class="schedule-vs">VS</div>
                 <div class="schedule-p">
                     ${getAvatarUI(a, "w-10", "h-10")}
-                    <span style="font-size: 3px;">${a?.name || "TBD"}</span>
+                    <span style="font-size: 6px;">${a?.name || "TBD"}</span>
 
                 </div>
             </div>
