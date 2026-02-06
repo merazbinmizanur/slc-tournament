@@ -411,281 +411,440 @@
             <section id="view-settings" class="absolute inset-0 p-6 hidden overflow-y-auto custom-scrollbar pb-32">
                 </section>
 
-            <section id="view-rules" class="absolute inset-0 p-6 hidden overflow-y-auto custom-scrollbar pb-32">
-                <div class="space-y-6">
-<div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl relative overflow-hidden">
-    <div class="absolute -right-10 -top-10 w-40 h-40 bg-gold-500/5 rounded-full blur-3xl"></div>
-    
-    <h2 class="text-xs font-black text-gold-500 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
-        <i data-lucide="info" class="w-3 h-3"></i> The Bounty Protocol
-    </h2>
-
-    <p class="text-[10px] text-slate-300 leading-relaxed font-medium mb-6 relative z-10 text-justify">
-        Welcome to the <span class="text-emerald-400 font-bold">SLC BOUNTY HUNTER</span> ecosystem. This is not merely a efootball tournament; it is a live financial market where your skill dictates your net worth & your hunting skills. Your goal is to accumulate <span class="text-gold-500 font-bold">Bounty Points (BP)</span> to rise from a Recruit to a Legend.
-    </p>
-
-    <div class="space-y-5 relative z-10">
-        
-        <div class="flex gap-3">
-            <div class="flex-none w-[2px] h-auto bg-emerald-500 rounded-full opacity-60"></div>
-            <div>
-                <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
-                    Phase 1 <span class="text-[7px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">FOUNDATION</span>
-                </h3>
-                <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
-                    The accumulation phase. You will play a set of randomized league fixtures to establish your base value. Every win adds BP to your account; every loss deducts it.
-                </p>
-            </div>
-        </div>
-
-        <div class="flex gap-3">
-            <div class="flex-none w-[2px] h-auto bg-blue-500 rounded-full opacity-60"></div>
-            <div>
-                <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
-                    Phase 2 <span class="text-[7px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">THE HUNTER ARENA</span>
-                </h3>
-                <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
-                    The auto-scheduler turns off. <span class="text-slate-300">You become the hunter.</span> You must negotiate matches with rivals directly. 
-                    <br><br>
-                    <span class="text-blue-400">• Title Match:</span> Risk 30% of the total pool. (Max 3 matches)<br>
-                    <span class="text-slate-400">• Standard:</span> Risk 15% of the total pool. (Max 2 matches)
-                </p>
-            </div>
-        </div>
-
-        <div class="flex gap-3">
-            <div class="flex-none w-[2px] h-auto bg-gold-500 rounded-full opacity-60"></div>
-            <div>
-                <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
-                    Phase 3 <span class="text-[7px] text-gold-500 bg-gold-500/10 px-1.5 py-0.5 rounded border border-gold-500/20">ELITE 8</span>
-                </h3>
-                <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
-                    When the market closes, only the <span class="text-white">Top 8 Highest Valued Hunters</span> qualify. They enter a ruthless knockout bracket to determine the Grand Champion. All others are eliminated.
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
-    <h2 class="text-xs font-black text-rose-500 uppercase tracking-widest mb-6 italic flex items-center gap-2">
-        <i data-lucide="shield-alert" class="w-3 h-3"></i> Official Rulebook
-    </h2>
-
+<section id="view-rules" class="absolute inset-0 p-6 hidden overflow-y-auto custom-scrollbar pb-32">
     <div class="space-y-6">
-        
-        <div>
-            <h3 class="text-[9px] font-black text-white uppercase mb-2 tracking-wider border-b border-white/5 pb-1">01. Match Protocol</h3>
-            <ul class="space-y-2">
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-rose-500 font-black text-[8px]">1.1</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">Verification:</span> Both players must verify the result using their unique SLC-ID. If scores do not match, the match is flagged for Admin review.
-                    </span>
-                </li>
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-rose-500 font-black text-[8px]">1.2</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">Evidence:</span> In case of a dispute, players must provide screenshot proof of the final scoreline.
-                    </span>
-                </li>
-            </ul>
-        </div>
 
-        <div>
-            <h3 class="text-[9px] font-black text-blue-400 uppercase mb-2 tracking-wider border-b border-white/5 pb-1">02. Arena Rules (Phase 2)</h3>
-            <ul class="space-y-2">
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-blue-500 font-black text-[8px]">2.1</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">The Refusal Penalty:</span> You have the right to decline a challenge, but doing so will incur a strict <span class="text-rose-500">5% Bounty Deduction</span> from your total. This prevents dodging high-level opponents.
-                    </span>
-                </li>
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-blue-500 font-black text-[8px]">2.2</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">Fixture Limits:</span> To ensure market fluidity, a single hunter is limited to:
-                        <br>• <span class="text-white">3 Title Match</span> Contracts (30% Risk)
-                        <br>• <span class="text-white">2 Standard</span> Contracts (15% Risk)
-                    </span>
-                </li>
-            </ul>
-        </div>
-
-        <div>
-            <h3 class="text-[9px] font-black text-gold-500 uppercase mb-2 tracking-wider border-b border-white/5 pb-1">03. Technical Integrity</h3>
-            <ul class="space-y-2">
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-gold-500 font-black text-[8px]">3.1</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">Disconnection:</span> If a player disconnects while losing, the result stands. If the score was level, the Admin decides whether a replay or a 0-0 draw is recorded.
-                    </span>
-                </li>
-                <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
-                    <span class="text-gold-500 font-black text-[8px]">3.2</span> 
-                    <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
-                        <span class="text-white">Admin Fiat:</span> The Tournament Admin holds the master key. Admin decisions regarding bug abuse, harassment, or scheduling conflicts are final and non-negotiable.
-                    </span>
-                </li>
-            </ul>
-        </div>
-
-    </div>
-</div>
-
-<div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
-    <h2 class="text-xs font-black text-blue-400 uppercase tracking-widest mb-6 italic flex items-center gap-2">
-        <i data-lucide="trending-up" class="w-3 h-3"></i> Global Ranking Protocol
-    </h2>
-
-    <div class="mb-8">
-        <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">01. The Hierarchy</h3>
-        <div class="grid grid-cols-1 gap-2">
-            <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-gold-500/20">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="crown" class="w-3 h-3 text-gold-500"></i>
-                    <span class="text-[9px] font-black text-gold-500 uppercase tracking-widest">Legend</span>
-                </div>
-                <span class="text-[9px] font-bold text-white">1001+ BP</span>
-            </div>
-             <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-blue-500/20">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="shield" class="w-3 h-3 text-blue-400"></i>
-                    <span class="text-[9px] font-black text-blue-400 uppercase tracking-widest">Elite</span>
-                </div>
-                <span class="text-[9px] font-bold text-white">801 - 1000 BP</span>
-            </div>
-            <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-emerald-500/20">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="zap" class="w-3 h-3 text-emerald-400"></i>
-                    <span class="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Apex</span>
-                </div>
-                <span class="text-[9px] font-bold text-white">700 - 800 BP</span>
-            </div>
-             <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-white/5">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="user" class="w-3 h-3 text-slate-400"></i>
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Recruit</span>
-                </div>
-                <span class="text-[9px] font-bold text-white">500 - 699 BP</span>
-            </div>
-             <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-rose-500/20">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="alert-circle" class="w-3 h-3 text-rose-500"></i>
-                    <span class="text-[9px] font-black text-rose-500 uppercase tracking-widest">Novice</span>
-                </div>
-                <span class="text-[9px] font-bold text-white">&lt; 500 BP</span>
-            </div>
-        </div>
-        
         <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl relative overflow-hidden">
-    <div class="absolute -left-10 -bottom-10 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl"></div>
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-gold-500/5 rounded-full blur-3xl"></div>
+            
+            <h2 class="text-xs font-black text-gold-500 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
+                <i data-lucide="info" class="w-3 h-3"></i> The Bounty Protocol
+            </h2>
 
-    <h2 class="text-xs font-black text-emerald-500 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
-        <i data-lucide="target" class="w-3 h-3"></i> Golden Boot Milestones
+            <p class="text-[10px] text-slate-300 leading-relaxed font-medium mb-6 relative z-10 text-justify">
+                Welcome to the <span class="text-emerald-400 font-bold">SLC BOUNTY HUNTER</span> ecosystem. This is not merely a efootball tournament; it is a live financial market where your skill dictates your net worth & your hunting skills. Your goal is to accumulate <span class="text-gold-500 font-bold">Bounty Points (BP)</span> to rise from a Recruit to a Legend.
+            </p>
+
+            <div class="space-y-5 relative z-10">
+                <div class="flex gap-3">
+                    <div class="flex-none w-[2px] h-auto bg-emerald-500 rounded-full opacity-60"></div>
+                    <div>
+                        <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
+                            Phase 1 <span class="text-[7px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">FOUNDATION</span>
+                        </h3>
+                        <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
+                            The accumulation phase. You will play a set of randomized league fixtures to establish your base value. Every win adds BP to your account; every loss deducts it.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <div class="flex-none w-[2px] h-auto bg-blue-500 rounded-full opacity-60"></div>
+                    <div>
+                        <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
+                            Phase 2 <span class="text-[7px] text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">THE HUNTER ARENA</span>
+                        </h3>
+                        <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
+                            The auto-scheduler turns off. <span class="text-slate-300">You become the hunter.</span> You must negotiate matches with rivals directly. 
+                            <br><br>
+                            <span class="text-blue-400">• Title Match:</span> Risk 30% of the total pool. (Max 3 matches)<br>
+                            <span class="text-slate-400">• Standard:</span> Risk 15% of the total pool. (Max 2 matches)
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <div class="flex-none w-[2px] h-auto bg-gold-500 rounded-full opacity-60"></div>
+                    <div>
+                        <h3 class="text-[9px] font-black text-white uppercase mb-1 flex items-center gap-2">
+                            Phase 3 <span class="text-[7px] text-gold-500 bg-gold-500/10 px-1.5 py-0.5 rounded border border-gold-500/20">ELITE 8</span>
+                        </h3>
+                        <p class="text-[8px] text-slate-500 uppercase font-bold leading-relaxed">
+                            When the market closes, only the <span class="text-white">Top 8 Highest Valued Hunters</span> qualify. They enter a ruthless knockout bracket to determine the Grand Champion. All others are eliminated.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
+            <h2 class="text-xs font-black text-blue-400 uppercase tracking-widest mb-6 italic flex items-center gap-2">
+                <i data-lucide="bar-chart-2" class="w-3 h-3"></i> Tie-Breaker Protocol
+            </h2>
+
+            <p class="text-[9px] text-slate-400 font-medium mb-4 leading-relaxed text-justify">
+                In the event that two or more Hunters hold the exact same <span class="text-white font-bold">Bounty Point (BP)</span> total, the system will automatically determine the higher rank based on the following strict hierarchy:
+            </p>
+
+            <div class="space-y-2">
+                <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-gold-500/20">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[8px] text-gold-500 font-black uppercase tracking-widest bg-gold-500/10 px-1.5 py-0.5 rounded">Priority 1</span>
+                        <span class="text-[9px] font-black text-white uppercase">Total Bounty (BP)</span>
+                    </div>
+                    <i data-lucide="coins" class="w-3 h-3 text-gold-500"></i>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[8px] text-slate-500 font-black uppercase tracking-widest bg-slate-800 px-1.5 py-0.5 rounded">Priority 2</span>
+                        <div class="flex flex-col">
+                            <span class="text-[9px] font-black text-emerald-400 uppercase">Goal Difference (GD)</span>
+                            <span class="text-[6px] text-slate-500 font-bold uppercase tracking-wider">Formula: (Goals Scored - Goals Conceded)</span>
+                        </div>
+                    </div>
+                    <i data-lucide="activity" class="w-3 h-3 text-emerald-400"></i>
+                </div>
+
+                <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[8px] text-slate-500 font-black uppercase tracking-widest bg-slate-800 px-1.5 py-0.5 rounded">Priority 3</span>
+                        <span class="text-[9px] font-black text-white uppercase">Total Goals Scored</span>
+                    </div>
+                    <i data-lucide="target" class="w-3 h-3 text-blue-400"></i>
+                </div>
+
+                <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[8px] text-slate-500 font-black uppercase tracking-widest bg-slate-800 px-1.5 py-0.5 rounded">Priority 4</span>
+                        <span class="text-[9px] font-black text-white uppercase">Total Matches Won</span>
+                    </div>
+                    <i data-lucide="trophy" class="w-3 h-3 text-slate-400"></i>
+                </div>
+            </div>
+            
+            <p class="text-[7px] text-slate-600 italic mt-3 text-center">
+                *The leaderboard updates automatically. A higher Goal Difference is the key to breaking ties.
+            </p>
+        </div>
+
+        <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl relative overflow-hidden">
+             <div class="absolute -left-10 -bottom-10 w-40 h-40 bg-rose-500/5 rounded-full blur-3xl"></div>
+
+            <h2 class="text-xs font-black text-rose-500 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
+                <i data-lucide="siren" class="w-3 h-3"></i> Overtime Sanctions
+            </h2>
+
+            <p class="text-[9px] text-slate-400 font-medium mb-4 leading-relaxed text-justify relative z-10">
+                Time is money. Every fixture has a strict deadline. If a match is not completed and submitted before the deadline expires, it enters <span class="text-rose-500 font-bold">Sanction Mode</span>.
+            </p>
+
+            <div class="bg-rose-950/20 border border-rose-500/20 rounded-2xl p-4 mb-5 relative z-10">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="p-1.5 bg-rose-500/10 rounded-lg">
+                        <i data-lucide="clock" class="w-4 h-4 text-rose-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-[8px] font-black text-white uppercase tracking-wider">The Late Penalty</p>
+                        <p class="text-[10px] font-black text-rose-400 uppercase">10% Per Hour Late</p>
+                    </div>
+                </div>
+                <p class="text-[7px] text-rose-300/70 font-bold uppercase leading-relaxed">
+                    The penalty compounds for every hour the result is delayed past the deadline.
+                </p>
+            </div>
+
+            <div class="space-y-4 relative z-10">
+                <h3 class="text-[8px] font-black text-slate-500 uppercase tracking-widest text-center border-b border-white/5 pb-2">Impact on Players</h3>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5 text-center relative overflow-hidden group">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-emerald-500/30 group-hover:bg-emerald-500 transition-colors"></div>
+                        <p class="text-[7px] text-slate-500 font-black uppercase mb-1">The Winner</p>
+                        <p class="text-[9px] font-black text-white group-hover:text-emerald-400 transition-colors">Reward Reduced</p>
+                        <p class="text-[6px] text-slate-600 mt-1 uppercase font-bold leading-tight">
+                            Your BP winnings are <br> CUT by the penalty %.
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5 text-center relative overflow-hidden group">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-rose-500/30 group-hover:bg-rose-500 transition-colors"></div>
+                        <p class="text-[7px] text-slate-500 font-black uppercase mb-1">The Loser</p>
+                        <p class="text-[9px] font-black text-white group-hover:text-rose-500 transition-colors">Loss Increased</p>
+                        <p class="text-[6px] text-slate-600 mt-1 uppercase font-bold leading-tight">
+                            Your BP loss is <br> AMPLIFIED by the penalty %.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 p-3 rounded-xl border border-white/5 flex gap-3 items-center">
+                    <i data-lucide="alert-circle" class="w-4 h-4 text-slate-500"></i>
+                    <p class="text-[7px] text-slate-400 italic leading-relaxed">
+                        <span class="text-white font-bold">Example:</span> If you are 3 hours late (-30%), the winner only gets 70% of the prize, and the loser loses an extra 30% BP.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
+            <h2 class="text-xs font-black text-rose-500 uppercase tracking-widest mb-6 italic flex items-center gap-2">
+                <i data-lucide="shield-alert" class="w-3 h-3"></i> Official Rulebook
+            </h2>
+
+            <div class="space-y-6">
+                
+                <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
+    <h2 class="text-xs font-black text-emerald-500 uppercase tracking-widest mb-6 italic flex items-center gap-2">
+        <i data-lucide="settings" class="w-3 h-3"></i> Match Room Settings
     </h2>
 
-    <p class="text-[9px] text-slate-400 font-medium mb-6 relative z-10">
-        Goals are currency. Reach these career totals to unlock automatic <span class="text-white font-bold">Bounty Point (BP)</span> injections.
-    </p>
-
-    <div class="space-y-2 relative z-10">
-        
-        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
-            <span class="text-[9px] font-black text-slate-300 uppercase">15 Goals</span>
-            <span class="text-[9px] font-black text-emerald-500">+50 BP</span>
+    <div class="grid grid-cols-2 gap-3 mb-5">
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Match Type</span>
+            <span class="text-[9px] font-black text-white uppercase">Standard</span>
         </div>
-
-        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
-            <span class="text-[9px] font-black text-slate-300 uppercase">30 Goals</span>
-            <span class="text-[9px] font-black text-emerald-400">+100 BP</span>
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Match Time</span>
+            <span class="text-[9px] font-black text-white uppercase">8 Minutes</span>
         </div>
-
-        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-blue-500/20">
-            <span class="text-[9px] font-black text-white uppercase">50 Goals</span>
-            <span class="text-[9px] font-black text-blue-400">+150 BP</span>
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Injuries</span>
+            <span class="text-[9px] font-black text-emerald-400 uppercase">On</span>
         </div>
-
-        <div class="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-rose-500/20">
-            <span class="text-[9px] font-black text-white uppercase">80 Goals</span>
-            <span class="text-[9px] font-black text-rose-500">+200 BP</span>
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Player Condition</span>
+            <span class="text-[9px] font-black text-white uppercase">Home: Normal  Away: Normal</span>
         </div>
-
-        <div class="flex items-center justify-between p-3 bg-gradient-to-r from-gold-500/10 to-transparent rounded-xl border border-gold-500/30 mt-2">
-            <div class="flex items-center gap-2">
-                <i data-lucide="crown" class="w-3 h-3 text-gold-500"></i>
-                <span class="text-[9px] font-black text-gold-500 uppercase tracking-widest">100+ Goals</span>
-            </div>
-            <span class="text-[11px] font-black text-white drop-shadow-md">+500 BP</span>
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Substitutions</span>
+            <span class="text-[9px] font-black text-white uppercase">5 Subs / 3 Intervals</span>
         </div>
-
-    </div>
-</div>
-
+        <div class="bg-slate-950/50 p-3 rounded-xl border border-white/5">
+            <span class="block text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Extra Time & PK</span>
+            <span class="text-[9px] font-black text-rose-500 uppercase">OFF <span class="text-slate-500 font-bold text-[7px]">(Except Knockout Finals)</span></span>
+        </div>
     </div>
 
-
-    <div>
-        <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">02. Scoring Protocol</h3>
-        <div class="space-y-4">
-            
-            <div>
-                <p class="text-[8px] text-emerald-500 font-black uppercase mb-1">Phase 1: Foundation</p>
-                <div class="grid grid-cols-3 gap-2 text-center">
-                    <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
-                        <span class="block text-[8px] text-slate-500 uppercase font-bold">Win</span>
-                        <span class="text-[9px] text-emerald-400 font-black">+100</span>
-                    </div>
-                    <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
-                        <span class="block text-[8px] text-slate-500 uppercase font-bold">Draw</span>
-                        <span class="text-[9px] text-rose-400 font-black">-30</span>
-                    </div>
-                    <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
-                        <span class="block text-[8px] text-slate-500 uppercase font-bold">Loss</span>
-                        <span class="text-[9px] text-rose-500 font-black">-50</span>
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <p class="text-[8px] text-blue-500 font-black uppercase mb-1">Phase 2: Match Tiers</p>
-                <div class="bg-slate-950 p-3 rounded-xl border border-white/5">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="text-[8px] text-slate-400 uppercase font-bold">High Stake (30%)</span>
-                        <span class="text-[8px] text-white font-black">Winner takes ~30% Pool</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-[8px] text-slate-400 uppercase font-bold">Standard (15%)</span>
-                        <span class="text-[8px] text-white font-black">Winner takes ~15% Pool</span>
-                    </div>
-                    <p class="text-[7px] text-rose-500 mt-2 italic">*Declining a challenge costs 5% of your total BP.</p>
-                </div>
-            </div>
-
-            <div>
-                <p class="text-[8px] text-gold-500 font-black uppercase mb-1">Phase 3: Elite Knockouts</p>
-                <div class="grid grid-cols-2 gap-2 text-center">
-                    <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
-                        <span class="block text-[8px] text-slate-500 uppercase font-bold">Knockout Win</span>
-                        <span class="text-[9px] text-gold-400 font-black">+300</span>
-                    </div>
-                    <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
-                        <span class="block text-[8px] text-slate-500 uppercase font-bold">Knockout Loss</span>
-                        <span class="text-[9px] text-rose-500 font-black">-250</span>
-                    </div>
-                </div>
-                <div class="bg-gradient-to-r from-gold-500/10 to-transparent p-2 rounded-lg border border-gold-500/20 mt-2 text-center">
-                    <span class="block text-[8px] text-gold-500 uppercase font-bold tracking-widest">Tournament Champion</span>
-                    <span class="text-xs text-white font-black">+1000 BP Bonus</span>
-                </div>
-            </div>
-
+    <div class="bg-rose-950/20 border border-rose-500/20 rounded-2xl p-4 flex gap-3 items-start">
+        <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5"></i>
+        <div>
+            <p class="text-[8px] font-black text-white uppercase tracking-wider mb-1">Host Responsibility Protocol</p>
+            <p class="text-[8px] text-rose-300/80 font-bold leading-relaxed text-justify">
+                Strict adherence to these settings is mandatory. The hosting player is solely responsible for verifying the configuration before kickoff. <span class="text-rose-500 text-opacity-100">Post-match disputes regarding incorrect room settings will be summarily dismissed.</span> Check your settings before you start.
+            </p>
         </div>
     </div>
 </div>
 
+                <div>
+                    <h3 class="text-[9px] font-black text-white uppercase mb-2 tracking-wider border-b border-white/5 pb-1">01. Match Protocol</h3>
+                    <ul class="space-y-2">
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-rose-500 font-black text-[8px]">1.1</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">Verification:</span> Both players must verify the result using their unique SLC-ID. If scores do not match, the match is flagged for Admin review.
+                            </span>
+                        </li>
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-rose-500 font-black text-[8px]">1.2</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">Evidence:</span> In case of a dispute, players must provide screenshot proof of the final scoreline.
+                            </span>
+                        </li>
+                    </ul>
                 </div>
-            </section>
+
+                <div>
+                    <h3 class="text-[9px] font-black text-blue-400 uppercase mb-2 tracking-wider border-b border-white/5 pb-1">02. Arena Rules (Phase 2)</h3>
+                    <ul class="space-y-2">
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-blue-500 font-black text-[8px]">2.1</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">The Refusal Penalty:</span> You have the right to decline a challenge, but doing so will incur a strict <span class="text-rose-500">5% Bounty Deduction</span> from your total. This prevents dodging high-level opponents.
+                            </span>
+                        </li>
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-blue-500 font-black text-[8px]">2.2</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">Fixture Limits:</span> To ensure market fluidity, a single hunter is limited to:
+                                <br>• <span class="text-white">3 Title Match</span> Contracts (30% Risk)
+                                <br>• <span class="text-white">2 Standard</span> Contracts (15% Risk)
+                            </span>
+                        </li>
+                        <li class="flex flex-col gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <div class="flex gap-3">
+                                <span class="text-blue-500 font-black text-[8px]">2.3</span> 
+                                <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                    <span class="text-white">The Stakes Formula:</span> Rewards and penalties are calculated based on the <span class="text-gold-500">Combined Market Value</span> of both hunters.
+                                </span>
+                            </div>
+                            
+                            <div class="bg-slate-900 border border-blue-500/20 rounded-lg p-3 mx-2">
+                                <p class="text-[7px] text-slate-500 font-black uppercase mb-2 text-center">Title Match Example (30% Risk)</p>
+                                
+                                <div class="flex items-center justify-center gap-2 mb-2">
+                                    <div class="text-center">
+                                        <span class="block text-[6px] text-slate-500 uppercase">You</span>
+                                        <span class="text-[8px] font-black text-white">1000 BP</span>
+                                    </div>
+                                    <span class="text-slate-600 font-black">+</span>
+                                    <div class="text-center">
+                                        <span class="block text-[6px] text-slate-500 uppercase">Rival</span>
+                                        <span class="text-[8px] font-black text-white">800 BP</span>
+                                    </div>
+                                    <span class="text-slate-600 font-black">=</span>
+                                    <div class="text-center">
+                                        <span class="block text-[6px] text-slate-500 uppercase">Pool</span>
+                                        <span class="text-[8px] font-black text-emerald-400">1800 BP</span>
+                                    </div>
+                                </div>
+
+                                <div class="h-[1px] bg-white/5 w-full mb-2"></div>
+
+                                <div class="flex justify-between items-center px-4">
+                                    <div class="text-center">
+                                        <span class="block text-[6px] text-slate-500 uppercase font-bold">Winner (+30%)</span>
+                                        <span class="text-[9px] font-black text-emerald-500">+540 BP</span>
+                                    </div>
+                                    <div class="text-center">
+                                        <span class="block text-[6px] text-slate-500 uppercase font-bold">Loser (-30%)</span>
+                                        <span class="text-[9px] font-black text-rose-500">-540 BP</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mx-2 mt-1 bg-rose-950/20 p-2 rounded-lg border border-rose-500/10 flex gap-2 items-start">
+                                <i data-lucide="trending-down" class="w-3 h-3 text-rose-500 flex-shrink-0 mt-0.5"></i>
+                                <p class="text-[7px] text-slate-400 font-bold leading-relaxed uppercase">
+                                    <span class="text-rose-500 font-black">Debt Protocol:</span> If a Hunter has <span class="text-white">Negative BP</span>, they subtract from the pool.
+                                    <br>
+                                    <span class="text-slate-500 normal-case italic">Ex: 1000 + (-200) = 800 Pool. Hunting bankrupt targets yields lower rewards.</span>
+                                </p>
+                            </div>
+                        </li>
+
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="text-[9px] font-black text-gold-500 uppercase mb-2 tracking-wider border-b border-white/5 pb-1">03. Technical Integrity</h3>
+                    <ul class="space-y-2">
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-gold-500 font-black text-[8px]">3.1</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">Disconnection:</span> If a player disconnects while losing, the result stands. If the score was level, the Admin decides whether a replay or a 0-0 draw is recorded.
+                            </span>
+                        </li>
+                        <li class="flex gap-3 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                            <span class="text-gold-500 font-black text-[8px]">3.2</span> 
+                            <span class="text-[8px] text-slate-400 uppercase font-bold leading-relaxed">
+                                <span class="text-white">Admin Fiat:</span> The Tournament Admin holds the master key. Admin decisions regarding bug abuse, harassment, or scheduling conflicts are final and non-negotiable.
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-white/5 rounded-[2.5rem] p-6 shadow-xl">
+            <h2 class="text-xs font-black text-blue-400 uppercase tracking-widest mb-6 italic flex items-center gap-2">
+                <i data-lucide="trending-up" class="w-3 h-3"></i> Global Ranking Protocol
+            </h2>
+
+            <div class="mb-8">
+                <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">01. The Hierarchy</h3>
+                <div class="grid grid-cols-1 gap-2">
+                    <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-gold-500/20">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="crown" class="w-3 h-3 text-gold-500"></i>
+                            <span class="text-[9px] font-black text-gold-500 uppercase tracking-widest">Legend</span>
+                        </div>
+                        <span class="text-[9px] font-bold text-white">1001+ BP</span>
+                    </div>
+                     <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-blue-500/20">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="shield" class="w-3 h-3 text-blue-400"></i>
+                            <span class="text-[9px] font-black text-blue-400 uppercase tracking-widest">Elite</span>
+                        </div>
+                        <span class="text-[9px] font-bold text-white">801 - 1000 BP</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-emerald-500/20">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="zap" class="w-3 h-3 text-emerald-400"></i>
+                            <span class="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Apex</span>
+                        </div>
+                        <span class="text-[9px] font-bold text-white">700 - 800 BP</span>
+                    </div>
+                     <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-white/5">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="user" class="w-3 h-3 text-slate-400"></i>
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Recruit</span>
+                        </div>
+                        <span class="text-[9px] font-bold text-white">500 - 699 BP</span>
+                    </div>
+                     <div class="flex items-center justify-between p-3 bg-slate-950/30 rounded-xl border border-rose-500/20">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="alert-circle" class="w-3 h-3 text-rose-500"></i>
+                            <span class="text-[9px] font-black text-rose-500 uppercase tracking-widest">Novice</span>
+                        </div>
+                        <span class="text-[9px] font-bold text-white">&lt; 500 BP</span>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">02. Scoring Protocol</h3>
+                <div class="space-y-4">
+                    
+                    <div>
+                        <p class="text-[8px] text-emerald-500 font-black uppercase mb-1">Phase 1: Foundation</p>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
+                                <span class="block text-[8px] text-slate-500 uppercase font-bold">Win</span>
+                                <span class="text-[9px] text-emerald-400 font-black">+100</span>
+                            </div>
+                            <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
+                                <span class="block text-[8px] text-slate-500 uppercase font-bold">Draw</span>
+                                <span class="text-[9px] text-rose-400 font-black">-30</span>
+                            </div>
+                            <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
+                                <span class="block text-[8px] text-slate-500 uppercase font-bold">Loss</span>
+                                <span class="text-[9px] text-rose-500 font-black">-50</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p class="text-[8px] text-blue-500 font-black uppercase mb-1">Phase 2: Match Tiers</p>
+                        <div class="bg-slate-950 p-3 rounded-xl border border-white/5">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[8px] text-slate-400 uppercase font-bold">High Stake (30%)</span>
+                                <span class="text-[8px] text-white font-black">Winner takes ~30% Pool</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[8px] text-slate-400 uppercase font-bold">Standard (15%)</span>
+                                <span class="text-[8px] text-white font-black">Winner takes ~15% Pool</span>
+                            </div>
+                            <p class="text-[7px] text-rose-500 mt-2 italic">*Declining a challenge costs 5% of your total BP.</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p class="text-[8px] text-gold-500 font-black uppercase mb-1">Phase 3: Elite Knockouts</p>
+                        <div class="grid grid-cols-2 gap-2 text-center">
+                            <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
+                                <span class="block text-[8px] text-slate-500 uppercase font-bold">Knockout Win</span>
+                                <span class="text-[9px] text-gold-400 font-black">+300</span>
+                            </div>
+                            <div class="bg-slate-950 p-2 rounded-lg border border-white/5">
+                                <span class="block text-[8px] text-slate-500 uppercase font-bold">Knockout Loss</span>
+                                <span class="text-[9px] text-rose-500 font-black">-250</span>
+                            </div>
+                        </div>
+                        <div class="bg-gradient-to-r from-gold-500/10 to-transparent p-2 rounded-lg border border-gold-500/20 mt-2 text-center">
+                            <span class="block text-[8px] text-gold-500 uppercase font-bold tracking-widest">Tournament Champion</span>
+                            <span class="text-xs text-white font-black">+1000 BP Bonus + Taka</span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+
         </div>
     </main>
 
@@ -895,17 +1054,23 @@
                     <span id="alert-countdown-timer" class="text-sm font-black text-white font-mono tracking-widest">00:00:00</span>
                 </div>
             </div>
+
             <button onclick="dismissMatchAlert()" class="w-full py-4 bg-gradient-to-r from-gold-600 to-gold-500 text-slate-950 text-[10px] font-black rounded-xl uppercase tracking-[0.2em] shadow-lg shadow-gold-500/20 active:scale-95 transition-all hover:brightness-110">
                 Enter
             </button>
+
         </div>
     </div>
 </div>
+
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
 <script src="script.js"></script>
 </body>
+
 </html>
