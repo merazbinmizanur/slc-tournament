@@ -92,9 +92,11 @@ let state = {
     activeMatchId: null,
     brokerSubTab: 'hunts',
     bulkMode: false,
+    matchAlertShown: false,
     selectedMatches: new Set()
 };
 let confirmCallback = null;
+let alertInterval = null; 
 
 // --- 2. CORE UTILITY ENGINES ---
 
@@ -1507,10 +1509,12 @@ function startScheduleTicker() {
 }
 
 // [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
-// [UPDATED] Render: Includes Time & Live Countdown
+// [UPDATED] Render Schedule: "My Fixture" only shows Scheduled matches WITH Deadlines
 function renderSchedule() {
     const active = document.getElementById('schedule-list');
     const recent = document.getElementById('recent-results-list');
+    const myFixtureContainer = document.getElementById('my-fixture-container');
+    const myFixtureDivider = document.getElementById('my-fixture-divider');
     
     // P1 Button Logic (Existing)
     const p1Btn = document.getElementById('p1-gen-btn');
@@ -1528,13 +1532,92 @@ function renderSchedule() {
     if (!active || !recent) return;
     active.innerHTML = '';
     recent.innerHTML = '';
+    if (myFixtureContainer) myFixtureContainer.innerHTML = '';
     
-    // Sort by Round First, then Date
+    // Sort by Round First, then Date. Filters out 'played' automatically.
     const allScheduled = state.matches
         .filter(m => m.status === 'scheduled')
         .sort((a, b) => (a.round || 0) - (b.round || 0));
     
     const display = (state.isAdmin || state.bulkMode) ? allScheduled : allScheduled.filter(m => m.scheduledDate === state.viewingDate);
+
+    // --- [NEW LOGIC START] MY FIXTURE SECTION ---
+    const myID = localStorage.getItem('slc_user_id');
+    
+    // FILTER: 
+    // 1. Must be my match
+    // 2. Must have a DEADLINE (Excludes TBA)
+    // 3. Must be Scheduled (Covered by allScheduled)
+    const myMatches = allScheduled.filter(m => 
+        (m.homeId === myID || m.awayId === myID) && 
+        m.deadline && m.deadline !== ""
+    );
+
+    if (myID && myMatches.length > 0 && !state.isAdmin && !state.bulkMode) {
+        myFixtureContainer.classList.remove('hidden');
+        if(myFixtureDivider) myFixtureDivider.classList.remove('hidden');
+
+        // Header for My Fixture
+        myFixtureContainer.innerHTML = `<h2 class="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] text-center mb-4 italic">My Fixture</h2>`;
+
+        myMatches.forEach(m => {
+            const h = state.players.find(p => p.id === m.homeId);
+            const a = state.players.find(p => p.id === m.awayId);
+            
+            // Time & Countdown Logic
+            const dateObj = new Date(m.deadline);
+            const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const formattedTime = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
+            
+            const countdownHTML = `
+                <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
+                    <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-white/5 active-countdown-wrapper">
+                        <i data-lucide="timer" class="w-3 h-3 text-gold-500 animate-pulse"></i>
+                        <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">CALCULATING...</span>
+                    </div>
+                </div>`;
+
+            // Create the Box (Gold Border for emphasis)
+            const box = document.createElement('div');
+            box.className = "moving-border-gold p-[1.5px] rounded-[1.8rem] mb-4 w-full shadow-2xl active:scale-95 transition-transform cursor-pointer";
+            box.onclick = () => openResultEntry(m.id);
+
+            box.innerHTML = `
+                <div class="bg-slate-900 p-5 rounded-[1.7rem] relative z-10">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center">
+                            <span class="text-[8px] text-gold-500 font-black uppercase tracking-wide">${m.scheduledDate || 'NO DATE'}</span>
+                            ${formattedTime}
+                        </div>
+                        <span class="text-[7px] text-blue-400 font-black uppercase bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">PH-${m.phase} • R-${m.round || 1}</span>
+                    </div>
+                    <div class="flex justify-between items-center gap-3">
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            ${getAvatarUI(h, "w-10", "h-10")}
+                            <span class="text-[9px] font-bold text-white uppercase truncate max-w-[80px]">${h?.name || "TBD"}</span>
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] font-black text-slate-700 italic">VS</span>
+                        </div>
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            ${getAvatarUI(a, "w-10", "h-10")}
+                            <span class="text-[9px] font-bold text-white uppercase truncate max-w-[80px]">${a?.name || "TBD"}</span>
+                        </div>
+                    </div>
+                    ${countdownHTML}
+                    <div class="mt-3 pt-2 border-t border-white/5 text-center">
+                        <p class="text-[7px] text-emerald-500 font-bold uppercase tracking-widest">Tap to Verify Result</p>
+                    </div>
+                </div>`;
+            
+            myFixtureContainer.appendChild(box);
+        });
+    } else {
+        if(myFixtureContainer) myFixtureContainer.classList.add('hidden');
+        if(myFixtureDivider) myFixtureDivider.classList.add('hidden');
+    }
+    // --- [NEW LOGIC END] ---
+
     
     // Admin Controls (Existing)
     if (state.isAdmin) {
@@ -1564,6 +1647,7 @@ function renderSchedule() {
     
     if (display.length === 0) active.innerHTML += `<p class="text-[8px] text-slate-600 font-black uppercase italic text-center py-4">No Active Fixtures</p>`;
     
+    // Main Schedule Loop
     display.forEach(m => {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
@@ -1576,30 +1660,21 @@ function renderSchedule() {
         card.onclick = () => { if (state.bulkMode) toggleMatchSelection(m.id);
             else openResultEntry(m.id); };
         
-        // --- NEW LOGIC START: Time & Countdown ---
         let formattedTime = "";
         let countdownHTML = "";
         
         if (m.deadline) {
-            // 1. Format Time (e.g., 11:59 PM)
             const dateObj = new Date(m.deadline);
             const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            
             formattedTime = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
-            
-            // 2. Countdown Badge HTML
             countdownHTML = `
                 <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
                     <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-white/5 active-countdown-wrapper">
                         <i data-lucide="timer" class="w-3 h-3 text-gold-500 animate-pulse"></i>
-                        <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">
-                            CALCULATING...
-                        </span>
+                        <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">CALCULATING...</span>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
-        // --- NEW LOGIC END ---
         
         let innerHTML = `
             <div class="bg-slate-900 p-4 rounded-[1.5rem] h-full relative z-10">
@@ -1622,9 +1697,8 @@ function renderSchedule() {
                         ${getAvatarUI(a, "w-8", "h-8")}
                     </div>
                 </div>
-                
                 ${countdownHTML}
-                `;
+        `;
         
         if (state.bulkMode && isSelected) {
             innerHTML += `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"><div class="w-8 h-8 bg-gold-500 rounded-full flex items-center justify-center shadow-lg animate-pop-in"><i data-lucide="check" class="w-5 h-5 text-black"></i></div></div>`;
@@ -1656,7 +1730,6 @@ function renderSchedule() {
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-
 
 
 // [UPDATED] createMatchResultCard: Shows Submitters Name
@@ -2783,32 +2856,37 @@ function showSchedulePreview(page = 1) {
     const uniqueDates = [...new Set(displayMatches.map(m => m.scheduledDate))];
     const headerDate = uniqueDates.length === 1 ? uniqueDates[0] : "UPCOMING FIXTURES";
 
-// 4. Build Match Rows (FIXED ALIGNMENT)
+    // 4. Build Match Rows
+    // 4. Build Match Rows (UPDATED LAYOUT)
     const rows = displayMatches.map(m => {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         
-        // Time & Round Formatting
+        // Time Formatting (Kept same)
         const dateObj = new Date(m.deadline);
         const bdTime = dateObj.toLocaleTimeString('en-US', {
-            timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit', hour12: true
+            timeZone: 'Asia/Dhaka',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
         });
+
         const roundInfo = `PHASE ${m.phase} • R-${m.round || 1}`;
         
         return `
         <div class="schedule-export-row">
-            <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 40px;">
+            <div class="schedule-players" style="display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;">
                 
-                <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1;">
-                    <div style="display: flex; align-items: center;">${getAvatarUI(h, "w-8", "h-8")}</div>
-                    <span style="font-size: 8px; font-weight: 900; color: #e2e8f0; text-transform: uppercase; white-space: nowrap;">${h?.name || "TBD"}</span>
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-end;">
+                    ${getAvatarUI(h, "w-10", "h-10")}
+                    <span style="font-size: 9px; font-weight: 800; color: #e2e8f0; text-transform: uppercase; text-align: right;">${h?.name || "TBD"}</span>
                 </div>
 
-                <div class="schedule-vs" style="margin: 0 8px; font-size: 8px;">VS</div>
+                <div class="schedule-vs" style="margin: 0 5px;">VS</div>
 
-                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex: 1;">
-                    <span style="font-size: 8px; font-weight: 900; color: #e2e8f0; text-transform: uppercase; white-space: nowrap;">${a?.name || "TBD"}</span>
-                     <div style="display: flex; align-items: center;">${getAvatarUI(a, "w-8", "h-8")}</div>
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-start;">
+                    <span style="font-size: 9px; font-weight: 800; color: #e2e8f0; text-transform: uppercase; text-align: left;">${a?.name || "TBD"}</span>
+                    ${getAvatarUI(a, "w-10", "h-10")}
                 </div>
 
             </div>
@@ -2819,8 +2897,6 @@ function showSchedulePreview(page = 1) {
             </div>
         </div>`;
     }).join('');
-
-
 
     // 5. Construct Final HTML (The Image Card)
     // Note: We add specific page number info to the footer
@@ -3317,10 +3393,17 @@ function refreshUI() {
         renderBrokerBoard(); 
         renderPlayerDashboard();
         renderNewsTicker();
+
+        // --- NEW: Trigger Priority Match Alert ---
+        // This checks if the logged-in user has a pending match with a deadline
+        checkPriorityMatches(); 
+
     } catch (err) {
         console.error("UI Render Error:", err);
     }
 }
+
+
 
 
 // [MOVED] checkTournamentWinner: Now completely outside and global
@@ -3337,4 +3420,86 @@ function checkTournamentWinner() {
             }
         }
     });
+}
+
+// --- PRIORITY MATCH ALERT SYSTEM ---
+
+function checkPriorityMatches() {
+    // 1. Prevent showing if already shown this session or if user is Admin
+    if (state.matchAlertShown || state.isAdmin) return;
+
+    const myID = localStorage.getItem('slc_user_id');
+    if (!myID) return;
+
+    // 2. Find Pending Matches
+    // We look for: Status = Scheduled AND (Home = Me OR Away = Me)
+    const pendingMatches = state.matches.filter(m => 
+        m.status === 'scheduled' && 
+        (m.homeId === myID || m.awayId === myID) &&
+        m.deadline // Must have a deadline set
+    );
+
+    if (pendingMatches.length === 0) return;
+
+    // 3. Sort by Urgency (Closest Deadline First)
+    pendingMatches.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    
+    // 4. Pick the most urgent match
+    const urgentMatch = pendingMatches[0];
+    
+    // 5. Populate Data
+    const opponentId = urgentMatch.homeId === myID ? urgentMatch.awayId : urgentMatch.homeId;
+    const opponent = state.players.find(p => p.id === opponentId);
+    const opName = opponent ? opponent.name : "Unknown Rival";
+    
+    // Format Date
+    const d = new Date(urgentMatch.deadline);
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    document.getElementById('alert-opponent-name').innerText = opName;
+    document.getElementById('alert-phase-badge').innerText = `PHASE ${urgentMatch.phase} • ROUND ${urgentMatch.round || 1}`;
+    document.getElementById('alert-deadline-text').innerText = `${dateStr} @ ${timeStr}`;
+
+    // 6. Start Live Countdown
+    startAlertCountdown(urgentMatch.deadline);
+
+    // 7. Show Modal
+    document.getElementById('modal-match-alert').classList.remove('hidden');
+    state.matchAlertShown = true; // Mark as shown so it doesn't pop up again on this refresh
+}
+
+function startAlertCountdown(deadlineISO) {
+    if (alertInterval) clearInterval(alertInterval);
+
+    const timerEl = document.getElementById('alert-countdown-timer');
+    const target = new Date(deadlineISO).getTime();
+
+    const update = () => {
+        const now = Date.now();
+        const diff = target - now;
+
+        if (diff <= 0) {
+            timerEl.innerText = "00:00:00";
+            timerEl.classList.add('text-rose-600');
+            clearInterval(alertInterval);
+            return;
+        }
+
+        const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((diff % (1000 * 60)) / 1000);
+
+        // Format: 05h : 30m : 12s
+        timerEl.innerText = `${h.toString().padStart(2, '0')}h : ${m.toString().padStart(2, '0')}m : ${s.toString().padStart(2, '0')}s`;
+    };
+
+    update(); // Run immediately
+    alertInterval = setInterval(update, 1000);
+}
+
+function dismissMatchAlert() {
+    const modal = document.getElementById('modal-match-alert');
+    modal.classList.add('hidden'); // Just hide, don't remove animation classes so it works next time
+    if (alertInterval) clearInterval(alertInterval);
 }
