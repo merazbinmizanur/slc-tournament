@@ -776,3 +776,10 @@ button[onclick="showStandingsPreview()"] {
     /* Dark Red tint background */
     border-radius: inherit;
 }
+/* --- HISTORY LOG STYLING --- */
+#bp-history-list {
+    scroll-behavior: smooth;
+    mask-image: linear-gradient(to bottom, transparent, black 10px, black 90%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 10px, black 90%, transparent);
+    padding: 10px 0;
+}
