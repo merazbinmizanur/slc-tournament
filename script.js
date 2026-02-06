@@ -844,6 +844,21 @@ function renderPlayerDashboard() {
                     </div>
                  </div>
             </div>`;
+            html += `
+            <div class="mt-2 mb-4">
+                 <button onclick="showPersonalCardPreview()" class="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-900 border border-gold-500/30 rounded-[1.8rem] relative overflow-hidden group shadow-xl active:scale-95 transition-all">
+                    <div class="absolute inset-0 bg-gold-500/5 group-hover:bg-gold-500/10 transition-colors"></div>
+                    <div class="relative z-10 flex items-center justify-center gap-3">
+                        <div class="bg-slate-950 p-2 rounded-full border border-gold-500/20">
+                            <i data-lucide="id-card" class="w-5 h-5 text-gold-500"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-[9px] font-black text-white uppercase tracking-widest">Download Player Card</p>
+                            <p class="text-[7px] text-slate-500 font-bold uppercase mt-0.5">Save Official Stats Image</p>
+                        </div>
+                    </div>
+                 </button>
+            </div>`;
     }
     
     // Footer
@@ -2395,6 +2410,179 @@ function showStandingsPreview() {
     openModal('modal-download-preview');
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
+// --- NEW FEATURE: PERSONAL CARD GENERATOR (Updated v2) ---
+
+// --- TOGGLE PRIVACY LOGIC (Updated v2) ---
+function togglePreviewID() {
+    const el = document.getElementById('preview-slc-id');
+    const btnIcon = document.getElementById('btn-privacy-icon');
+    const btnText = document.getElementById('btn-privacy-text');
+    const warningEl = document.getElementById('privacy-warning'); // New Warning Element
+    
+    if (!el) return;
+
+    const full = el.getAttribute('data-full');
+    const masked = el.getAttribute('data-masked');
+    const isHidden = el.innerText.includes('*');
+
+    if (isHidden) {
+        // ACTION: SHOW FULL ID
+        el.innerText = `SLC-ID: ${full}`;
+        
+        // Update Button
+        if(btnIcon) btnIcon.setAttribute('data-lucide', 'eye-off');
+        if(btnText) btnText.innerText = "Hide SLC-ID";
+        
+        // Show Warning
+        if(warningEl) warningEl.classList.remove('hidden');
+        
+    } else {
+        // ACTION: HIDE ID
+        el.innerText = `SLC-ID: ${masked}`;
+        
+        // Update Button
+        if(btnIcon) btnIcon.setAttribute('data-lucide', 'eye');
+        if(btnText) btnText.innerText = "Show SLC-ID";
+        
+        // Hide Warning
+        if(warningEl) warningEl.classList.add('hidden');
+    }
+    
+    // Refresh icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+
+// --- NEW FEATURE: PERSONAL CARD GENERATOR (Updated v5 - Illustrations & Animation) ---
+// --- PERSONAL CARD GENERATOR (Final Version with Ranking) ---
+function showPersonalCardPreview() {
+    const myID = localStorage.getItem('slc_user_id');
+    const p = state.players.find(x => x.id === myID);
+    
+    if (!p) return notify("Player Data Not Found", "x-circle");
+
+    // 1. CALCULATE GLOBAL RANKING (Based on Bounty)
+    // Sort all players by Bounty (Highest to Lowest)
+    const sortedByBounty = [...state.players].sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
+    // Find index (0-based) and add 1 to get Rank (1-based)
+    const globalRank = sortedByBounty.findIndex(x => x.id === p.id) + 1;
+
+    // 2. Calculate Stats
+    let goalsConceded = 0;
+    state.matches.forEach(m => {
+        if (m.status === 'played') {
+            if (m.homeId === p.id) goalsConceded += (m.score?.a || 0);
+            if (m.awayId === p.id) goalsConceded += (m.score?.h || 0);
+        }
+    });
+
+    const rankInfo = getRankInfo(p.bounty);
+
+    // 3. TOP SCORER ACHIEVEMENT LOGIC (Conditional Visibility)
+    // Sort all players by Goals
+    const sortedScorers = [...state.players].sort((a, b) => (b.goals || 0) - (a.goals || 0));
+    const scorerIndex = sortedScorers.findIndex(x => x.id === p.id);
+    
+    let achievementHTML = ''; // Default is empty (Hidden)
+
+    // Only show if player has goals AND is in the Top 3
+    if (p.goals > 0 && scorerIndex < 3) {
+        const medals = ["GOLDEN BOOT LEADER", "SILVER STRIKER", "BRONZE BOMBER"];
+        const colors = ["text-gold-500", "text-slate-300", "text-rose-400"];
+        
+        achievementHTML = `
+            <div class="p-card-achievement">
+                <div class="bg-slate-900 p-1.5 rounded-full border border-white/10">
+                    <i data-lucide="trophy" class="w-3 h-3 ${colors[scorerIndex]}"></i>
+                </div>
+                <div>
+                    <p class="text-[6px] text-slate-500 font-bold uppercase tracking-widest">Achievement</p>
+                    <p class="text-[8px] font-black text-white uppercase tracking-wide">${medals[scorerIndex]}</p>
+                </div>
+            </div>`;
+    }
+
+    // 4. Avatar & Privacy Logic
+    let imgHTML = p.avatar 
+        ? `<img src="${p.avatar}" class="p-card-avatar-img" crossorigin="anonymous">`
+        : `<div class="p-card-avatar-img flex items-center justify-center text-6xl font-black text-white bg-slate-800">${(p.name || "U").charAt(0).toUpperCase()}</div>`;
+
+    const maskedID = p.id.replace(/\d/g, '*');
+
+    // 5. CONSTRUCT HTML
+    const html = `
+    <div class="w-full max-w-[400px] mx-auto mb-4 flex flex-col items-center gap-3">
+        <button onclick="togglePreviewID()" class="flex items-center gap-2 px-6 py-2.5 bg-slate-800 border border-white/10 rounded-full hover:bg-slate-700 transition-colors active:scale-95 shadow-lg">
+            <i id="btn-privacy-icon" data-lucide="eye-off" class="w-3 h-3 text-emerald-400"></i>
+            <span id="btn-privacy-text" class="text-[9px] font-black text-white uppercase tracking-widest">Hide SLC-ID</span>
+        </button>
+        <div id="privacy-warning" class="bg-rose-950/30 px-4 py-2 rounded-xl border border-rose-500/20 text-center animate-pulse">
+            <p class="text-[8px] font-bold text-rose-500 uppercase tracking-wide leading-tight">
+                <i data-lucide="alert-triangle" class="w-3 h-3 inline mr-1 mb-0.5"></i>
+                Security Alert: Your ID is visible. Hide it to prevent unauthorized access.
+            </p>
+        </div>
+    </div>
+
+    <div class="p-card-container" id="capture-zone">
+        
+        <div class="p-card-bg-decoration"></div>
+        <div class="p-card-orb orb-1"></div>
+        <div class="p-card-orb orb-2"></div>
+        <div class="p-card-orb orb-3"></div>
+
+        <div class="p-card-header">
+            <p class="text-[7px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1">Synthex Legion Chronicles</p>
+            <h1 class="text-base font-black text-white uppercase italic tracking-tighter">SLC Bounty Hunter</h1>
+            <p class="text-[6px] font-bold text-slate-500 uppercase tracking-widest mt-1 border border-white/5 inline-block px-2 py-0.5 rounded-md">Official Player Profile</p>
+        </div>
+
+        <div class="p-card-avatar-box">
+            ${imgHTML}
+            <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-slate-900 px-3 py-1 rounded-full border border-gold-500/50 shadow-lg whitespace-nowrap z-20">
+                <span id="preview-slc-id" data-full="${p.id}" data-masked="${maskedID}" class="text-[8px] font-black text-gold-500 uppercase tracking-widest">SLC-ID: ${p.id}</span>
+            </div>
+        </div>
+
+        <div class="p-card-name-strip">
+            <h2 class="text-xl font-black text-white uppercase italic tracking-tight drop-shadow-lg relative z-10">${p.name}</h2>
+            
+            <div class="flex items-center justify-center gap-2 mt-1 relative z-10">
+                <span class="text-[8px] font-black text-white bg-white/10 px-2 py-0.5 rounded border border-white/10">
+                    #${globalRank} GLOBAL
+                </span>
+                <span class="text-[8px] font-bold ${rankInfo.color} uppercase tracking-[0.2em]">
+                    ${rankInfo.name} Tier
+                </span>
+            </div>
+        </div>
+
+        ${achievementHTML}
+
+        <div class="p-card-grid">
+            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase">Matches</span><span class="text-[10px] font-black text-white">${p.mp || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase">Bounty</span><span class="text-[10px] font-black text-emerald-400">${(p.bounty || 0).toLocaleString()}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-emerald-500 font-black uppercase">Wins</span><span class="text-[10px] font-black text-white">${p.wins || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-gold-500 font-black uppercase">Goals (S)</span><span class="text-[10px] font-black text-white">${p.goals || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-rose-500 font-black uppercase">Losses</span><span class="text-[10px] font-black text-white">${p.losses || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-blue-400 font-black uppercase">Goals (C)</span><span class="text-[10px] font-black text-white">${goalsConceded}</span></div>
+        </div>
+
+        <div class="p-card-footer">
+            <div class="h-[1px] w-10 bg-white/10 mx-auto mb-2"></div>
+            <p class="text-[6px] text-slate-600 font-black uppercase tracking-[0.2em]">Generated via SLC-OS • ${new Date().toLocaleString()}</p>
+        </div>
+    </div>`;
+
+    const previewArea = document.getElementById('preview-content-area');
+    if(previewArea) {
+        previewArea.innerHTML = html;
+        openModal('modal-download-preview');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+}
+
 
 
 // 2. EXECUTE THE ACTUAL DOWNLOAD
