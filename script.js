@@ -165,6 +165,75 @@ function getAvatarUI(p, w="w-8", h="h-8", text="text-xs") {
     }
 }
 
+/**
+ * OFFICIAL RANKING ENGINE
+ * Sorting Hierarchy: 
+ * 1. Bounty Points (BP)
+ * 2. Goal Difference (GD)
+ * 3. Goals Scored (GS)
+ * 4. Total Wins
+ */
+function getSmartSortedPlayers() {
+    // 1. Calculate Goals Conceded for everyone first
+    const concededMap = {};
+    state.players.forEach(p => concededMap[p.id] = 0);
+
+    state.matches.forEach(m => {
+        if (m.status === 'played' && m.score) {
+            // If Home played, they conceded Away's score
+            if (concededMap[m.homeId] !== undefined) concededMap[m.homeId] += (parseInt(m.score.a) || 0);
+            // If Away played, they conceded Home's score
+            if (concededMap[m.awayId] !== undefined) concededMap[m.awayId] += (parseInt(m.score.h) || 0);
+        }
+    });
+
+    // 2. Create enhanced player objects with GD attached (Non-destructive)
+    const enhancedPlayers = state.players.map(p => {
+        const conceded = concededMap[p.id] || 0;
+        const goals = p.goals || 0;
+        const gd = goals - conceded;
+        return { ...p, _gd: gd, _conceded: conceded };
+    });
+
+    // 3. Execute Multi-Tier Sort
+    return enhancedPlayers.sort((a, b) => {
+        // Priority 1: Bounty Points (Higher is better)
+        const bpDiff = (b.bounty || 0) - (a.bounty || 0);
+        if (bpDiff !== 0) return bpDiff;
+
+        // Priority 2: Goal Difference (Higher is better)
+        const gdDiff = b._gd - a._gd;
+        if (gdDiff !== 0) return gdDiff;
+
+        // Priority 3: Goals Scored (Higher is better)
+        const gsDiff = (b.goals || 0) - (a.goals || 0);
+        if (gsDiff !== 0) return gsDiff;
+
+        // Priority 4: Total Wins (Higher is better)
+        return (b.wins || 0) - (a.wins || 0);
+    });
+}
+
+/**
+ * SANCTION CALCULATOR
+ * Returns the penalty percentage based on how many hours late the match is.
+ * Rule: 10% per hour late.
+ */
+function getSanctionPercentage(deadlineISO) {
+    if (!deadlineISO) return 0;
+    
+    const deadline = new Date(deadlineISO).getTime();
+    const now = Date.now();
+    
+    if (now <= deadline) return 0; // Not late
+    
+    const diffMs = now - deadline;
+    const diffHours = Math.ceil(diffMs / (1000 * 60 * 60)); // Round up to next hour
+    
+    // 10% per hour
+    return diffHours * 10;
+}
+
 
 /**
  * Custom Notification Toast
@@ -1155,43 +1224,43 @@ async function saveMatchResult() {
         let matchUpdate = { status: 'played' };
         let hBP = 0, aBP = 0;
 
-        // --- UPDATED: CAPTURE SUBMITTER NAME (PRIVACY SAFE) ---
         let submitterName = "Admin";
-        
         if (!state.isAdmin) {
-            // Find the player object that matches the Verification ID
             const submitterObj = state.players.find(p => p.id === verifyId);
-            
-            if (submitterObj && submitterObj.name) {
-                // SUCCESS: Save their Name
-                submitterName = submitterObj.name; 
-            } else {
-                // FALLBACK: If name not found, show generic text. NEVER show ID.
-                submitterName = "Verified Player"; 
-            }
+            submitterName = submitterObj && submitterObj.name ? submitterObj.name : "Verified Player"; 
         }
-        
         matchUpdate.submittedBy = submitterName;
-        // ------------------------------------------------------
 
-        // 1. GET PLAYERS & ACTIVE EFFECTS
         const hObj = state.players.find(p => p.id === m.homeId);
         const aObj = state.players.find(p => p.id === m.awayId);
         const hEff = hObj?.active_effects || {};
         const aEff = aObj?.active_effects || {};
 
-        // 2. HELPER: CALCULATE POINTS
+        // --- NEW: SANCTION LOGIC ---
+        const sanctionPercent = getSanctionPercentage(m.deadline);
+        // Multipliers (Example: 20% late)
+        // Winner gets 80% (1 - 0.2)
+        // Loser pays 120% (1 + 0.2)
+        const winMod = Math.max(0, 1 - (sanctionPercent / 100)); 
+        const lossMod = 1 + (sanctionPercent / 100);
+
+        matchUpdate.sanctionApplied = sanctionPercent; // Save for record
+        // ---------------------------
+
+        // Helper: Calculate Points with Sanction Applied
         const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
             if (isWinner) {
-                if (effectObj.multiplier) return baseWin * 2;
-                return baseWin;
+                let pts = baseWin * winMod; // Apply Sanction Cut
+                if (effectObj.multiplier) pts *= 2;
+                return Math.floor(pts);
             } else {
-                if (effectObj.insurance) return baseLoss / 2;
-                return baseLoss;
+                let pts = baseLoss * lossMod; // Apply Sanction Penalty
+                if (effectObj.insurance) pts /= 2;
+                return Math.floor(pts);
             }
         };
 
-        // 3. DEFINE BASE SCORING RULES
+        // BASE RULES
         let winPts = 0, lossPts = 0, drawPts = -30;
 
         if (m.phase === 3) {
@@ -1206,7 +1275,7 @@ async function saveMatchResult() {
             winPts = 100; lossPts = -50;
         }
 
-        // 4. CALCULATE FINAL BP
+        // CALCULATE FINAL BP
         if (sH > sA) { 
             hBP = calcPoints(true, winPts, lossPts, hEff);
             aBP = calcPoints(false, winPts, lossPts, aEff);
@@ -1216,13 +1285,15 @@ async function saveMatchResult() {
             aBP = calcPoints(true, winPts, lossPts, aEff);
         } 
         else { 
-            hBP = drawPts; aBP = drawPts; 
+            // Draws are usually not sanctioned, but let's apply the Loss Mod to the penalty to be strict
+            hBP = Math.floor(drawPts * lossMod); 
+            aBP = Math.floor(drawPts * lossMod); 
         }
 
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
-        // 5. CONSUME ITEMS
+        // CONSUME ITEMS
         const consumeItem = (pid, effectName) => {
             batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
         };
@@ -1235,7 +1306,7 @@ async function saveMatchResult() {
         if (aEff.multiplier) consumeItem(m.awayId, "multiplier");
         if (aEff.privacy) consumeItem(m.awayId, "privacy");
 
-        // 6. UPDATE PLAYER STATS
+        // UPDATE PLAYER STATS
         batch.update(db.collection("players").doc(m.homeId), {
             bounty: firebase.firestore.FieldValue.increment(hBP),
             goals: firebase.firestore.FieldValue.increment(sH),
@@ -1256,10 +1327,15 @@ async function saveMatchResult() {
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         await batch.commit();
         
-        notify("Result Saved!", "check-circle");
+        // Custom message for sanctioned matches
+        if (sanctionPercent > 0) {
+            notify(`Sanction Applied: Reward -${sanctionPercent}%`, "alert-triangle");
+        } else {
+            notify("Result Saved!", "check-circle");
+        }
+        
         closeModal('modal-result');
 
-        // Check Milestones (If function exists)
         if (typeof checkAndRewardMilestones === 'function') {
             await checkAndRewardMilestones(m.homeId);
             await checkAndRewardMilestones(m.awayId);
@@ -1270,8 +1346,6 @@ async function saveMatchResult() {
         notify("Sync Error", "x-circle");
     }
 }
-
-
 
 
 // [UPDATED] openResultEntry: Uses Avatar Engine for pictures
@@ -1383,20 +1457,24 @@ function renderLeaderboard() {
     
     list.innerHTML = `<h2 class="text-xs font-black text-slate-500 uppercase mb-6 italic tracking-widest">Global Standings</h2>`;
     
-    [...state.players].sort((a,b) => b.bounty - a.bounty).forEach((p, i) => {
+    // Use Official Sorting
+    const sortedPlayers = getSmartSortedPlayers();
+    
+    sortedPlayers.forEach((p, i) => {
         let borderClass = 'moving-border-blue'; 
         if (i === 0) borderClass = 'moving-border-gold';
         if (i === 1 || i === 2) borderClass = 'moving-border-emerald';
 
-        // --- START UPDATE: CHECK PRIVACY ITEM ---
         const activeEff = p.active_effects || {};
-        let statsDisplay = `M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}`;
+        const gdSign = p._gd > 0 ? '+' : '';
+        const gdDisplay = `${gdSign}${p._gd}`;
+        
+        let statsDisplay = `${p.mp||0}M ${p.wins||0}W ${p.draws||0}D ${p.losses||0}L • <span class="${p._gd >= 0 ? 'text-slate-400' : 'text-rose-500'}">GD ${gdDisplay}</span>`;
 
-        // If Privacy is active, hide the stats
+        // Privacy Check
         if (activeEff.privacy) {
             statsDisplay = `<span class="text-emerald-500 flex items-center gap-1"><i data-lucide="lock" class="w-2 h-2"></i> DATA ENCRYPTED</span>`;
         }
-        // --- END UPDATE ---
 
         list.innerHTML += `
             <div class="${borderClass} p-[1px] rounded-[1.6rem] mb-3 w-full max-w-[340px] mx-auto shadow-xl">
@@ -1416,9 +1494,10 @@ function renderLeaderboard() {
             </div>`;
     });
     
-    // Refresh icons for the new "Lock" symbol
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
+
 
 
 
@@ -1509,14 +1588,13 @@ function startScheduleTicker() {
 }
 
 // [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
-// [UPDATED] Render Schedule: "My Fixture" only shows Scheduled matches WITH Deadlines
 function renderSchedule() {
     const active = document.getElementById('schedule-list');
     const recent = document.getElementById('recent-results-list');
     const myFixtureContainer = document.getElementById('my-fixture-container');
     const myFixtureDivider = document.getElementById('my-fixture-divider');
     
-    // P1 Button Logic (Existing)
+    // P1 Button Logic
     const p1Btn = document.getElementById('p1-gen-btn');
     if (p1Btn) {
         const p1Exists = state.matches.some(m => m.phase === 1);
@@ -1534,20 +1612,15 @@ function renderSchedule() {
     recent.innerHTML = '';
     if (myFixtureContainer) myFixtureContainer.innerHTML = '';
     
-    // Sort by Round First, then Date. Filters out 'played' automatically.
+    // Sort: Round -> Date
     const allScheduled = state.matches
         .filter(m => m.status === 'scheduled')
         .sort((a, b) => (a.round || 0) - (b.round || 0));
     
     const display = (state.isAdmin || state.bulkMode) ? allScheduled : allScheduled.filter(m => m.scheduledDate === state.viewingDate);
 
-    // --- [NEW LOGIC START] MY FIXTURE SECTION ---
+    // --- MY FIXTURE SECTION ---
     const myID = localStorage.getItem('slc_user_id');
-    
-    // FILTER: 
-    // 1. Must be my match
-    // 2. Must have a DEADLINE (Excludes TBA)
-    // 3. Must be Scheduled (Covered by allScheduled)
     const myMatches = allScheduled.filter(m => 
         (m.homeId === myID || m.awayId === myID) && 
         m.deadline && m.deadline !== ""
@@ -1557,37 +1630,57 @@ function renderSchedule() {
         myFixtureContainer.classList.remove('hidden');
         if(myFixtureDivider) myFixtureDivider.classList.remove('hidden');
 
-        // Header for My Fixture
         myFixtureContainer.innerHTML = `<h2 class="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] text-center mb-4 italic">My Fixture</h2>`;
 
         myMatches.forEach(m => {
             const h = state.players.find(p => p.id === m.homeId);
             const a = state.players.find(p => p.id === m.awayId);
             
-            // Time & Countdown Logic
+            // --- NEW: SANCTION CHECK ---
+            const sanction = getSanctionPercentage(m.deadline);
+            const isLate = sanction > 0;
+            
+            let boxClass = "moving-border-gold";
+            let timerHTML = '';
+            let dateDisplay = '';
+
             const dateObj = new Date(m.deadline);
             const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            const formattedTime = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
-            
-            const countdownHTML = `
+
+            if (isLate) {
+                // OVERDUE STATE
+                boxClass = "moving-border-rose"; // Red Alert
+                dateDisplay = `<span class="text-[7px] text-rose-500 font-black ml-1 border-l border-white/10 pl-2 animate-pulse">DEADLINE BREACHED</span>`;
+                
+                timerHTML = `
+                <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
+                    <div class="flex items-center gap-2 bg-rose-950/40 px-3 py-1.5 rounded-lg border border-rose-500/30">
+                        <i data-lucide="alert-triangle" class="w-3 h-3 text-rose-500"></i>
+                        <span class="text-[9px] font-black font-mono tracking-widest text-rose-500">SANCTION ACTIVE: -${sanction}%</span>
+                    </div>
+                </div>`;
+            } else {
+                // NORMAL STATE
+                dateDisplay = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
+                timerHTML = `
                 <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
                     <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-white/5 active-countdown-wrapper">
                         <i data-lucide="timer" class="w-3 h-3 text-gold-500 animate-pulse"></i>
                         <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">CALCULATING...</span>
                     </div>
                 </div>`;
+            }
 
-            // Create the Box (Gold Border for emphasis)
             const box = document.createElement('div');
-            box.className = "moving-border-gold p-[1.5px] rounded-[1.8rem] mb-4 w-full shadow-2xl active:scale-95 transition-transform cursor-pointer";
+            box.className = `${boxClass} p-[1.5px] rounded-[1.8rem] mb-4 w-full shadow-2xl active:scale-95 transition-transform cursor-pointer`;
             box.onclick = () => openResultEntry(m.id);
 
             box.innerHTML = `
                 <div class="bg-slate-900 p-5 rounded-[1.7rem] relative z-10">
                     <div class="flex justify-between items-center mb-4">
                         <div class="flex items-center">
-                            <span class="text-[8px] text-gold-500 font-black uppercase tracking-wide">${m.scheduledDate || 'NO DATE'}</span>
-                            ${formattedTime}
+                            <span class="text-[8px] ${isLate ? 'text-rose-500' : 'text-gold-500'} font-black uppercase tracking-wide">${m.scheduledDate || 'NO DATE'}</span>
+                            ${dateDisplay}
                         </div>
                         <span class="text-[7px] text-blue-400 font-black uppercase bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">PH-${m.phase} • R-${m.round || 1}</span>
                     </div>
@@ -1604,9 +1697,9 @@ function renderSchedule() {
                             <span class="text-[9px] font-bold text-white uppercase truncate max-w-[80px]">${a?.name || "TBD"}</span>
                         </div>
                     </div>
-                    ${countdownHTML}
+                    ${timerHTML}
                     <div class="mt-3 pt-2 border-t border-white/5 text-center">
-                        <p class="text-[7px] text-emerald-500 font-bold uppercase tracking-widest">Tap to Verify Result</p>
+                        <p class="text-[7px] ${isLate ? 'text-rose-500' : 'text-emerald-500'} font-bold uppercase tracking-widest">${isLate ? 'Submit to Apply Penalty' : 'Tap to Verify Result'}</p>
                     </div>
                 </div>`;
             
@@ -1616,14 +1709,11 @@ function renderSchedule() {
         if(myFixtureContainer) myFixtureContainer.classList.add('hidden');
         if(myFixtureDivider) myFixtureDivider.classList.add('hidden');
     }
-    // --- [NEW LOGIC END] ---
-
     
-    // Admin Controls (Existing)
+    // Admin Controls
     if (state.isAdmin) {
         const controlsDiv = document.createElement('div');
         controlsDiv.className = "w-full max-w-[340px] mb-6 space-y-3";
-        
         if (!state.bulkMode) {
             controlsDiv.innerHTML = `
             <button onclick="toggleBulkMode()" class="w-full py-3 bg-white/5 border border-white/10 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2">
@@ -1652,28 +1742,43 @@ function renderSchedule() {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         const isSelected = state.selectedMatches.has(m.id);
-        const borderClass = state.bulkMode ? (isSelected ? 'moving-border-gold' : 'moving-border') : 'moving-border-emerald';
         
+        // --- NEW: SANCTION CHECK FOR MAIN LIST ---
+        const sanction = getSanctionPercentage(m.deadline);
+        const isLate = sanction > 0;
+
+        let borderClass = state.bulkMode ? (isSelected ? 'moving-border-gold' : 'moving-border') : 'moving-border-emerald';
+        if (isLate && !state.bulkMode) borderClass = 'moving-border-rose'; // Red Border if late
+
         const card = document.createElement('div');
         card.className = `${borderClass} p-[1px] rounded-[1.6rem] mb-4 w-full max-w-[340px] mx-auto shadow-xl transition-transform ${state.bulkMode ? 'cursor-pointer' : 'active:scale-95'}`;
         
         card.onclick = () => { if (state.bulkMode) toggleMatchSelection(m.id);
             else openResultEntry(m.id); };
         
-        let formattedTime = "";
+        let dateDisplay = "";
         let countdownHTML = "";
         
         if (m.deadline) {
             const dateObj = new Date(m.deadline);
             const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            formattedTime = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
-            countdownHTML = `
+            
+            if (isLate) {
+                dateDisplay = `<span class="text-[7px] text-rose-500 font-black ml-1 border-l border-white/10 pl-2">LATE: -${sanction}%</span>`;
+                countdownHTML = `
+                <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
+                    <span class="text-[8px] font-black text-rose-500 uppercase tracking-widest bg-rose-950/30 px-2 py-1 rounded">Sanction Active</span>
+                </div>`;
+            } else {
+                dateDisplay = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
+                countdownHTML = `
                 <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
                     <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-white/5 active-countdown-wrapper">
                         <i data-lucide="timer" class="w-3 h-3 text-gold-500 animate-pulse"></i>
                         <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">CALCULATING...</span>
                     </div>
                 </div>`;
+            }
         }
         
         let innerHTML = `
@@ -1681,7 +1786,7 @@ function renderSchedule() {
                 <div class="flex justify-between items-center mb-3">
                     <div class="flex items-center">
                         <span class="text-[7px] ${isSelected ? 'text-gold-500' : 'text-slate-400'} font-black uppercase transition-colors">${m.scheduledDate || 'NO DATE'}</span>
-                        ${formattedTime}
+                        ${dateDisplay}
                     </div>
                     <span class="text-[7px] text-blue-400 font-black uppercase">PH-${m.phase} • R-${m.round || 1}</span>
                 </div>
@@ -1705,9 +1810,9 @@ function renderSchedule() {
         }
         
         if (state.isAdmin && !state.bulkMode) {
-            const hName = h ? h.name : 'HOME';
-            const aName = a ? a.name : 'AWAY';
-            innerHTML += `
+             const hName = h ? h.name : 'HOME';
+             const aName = a ? a.name : 'AWAY';
+             innerHTML += `
              <div class="mt-3 pt-3 border-t border-white/5 flex gap-2">
                  <button onclick="event.stopPropagation(); openSMS('${m.id}', 'home')" class="flex-1 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all overflow-hidden"><i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> <span class="truncate">${hName}</span></button>
                  <button onclick="event.stopPropagation(); openSMS('${m.id}', 'away')" class="flex-1 py-2 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-blue-600 hover:text-white transition-all overflow-hidden"><i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> <span class="truncate">${aName}</span></button>
@@ -1719,10 +1824,8 @@ function renderSchedule() {
         active.appendChild(card);
     });
     
-    // Start the countdown Engine
     startScheduleTicker();
     
-    // Recent Results Logic (Existing)
     const playedMatches = state.matches.filter(m => m.status === 'played').sort((a, b) => b.id.localeCompare(a.id));
     playedMatches.slice(0, 5).forEach(m => recent.appendChild(createMatchResultCard(m)));
     if (playedMatches.length > 5) recent.innerHTML += `<div class="w-full text-center mt-4"><button onclick="openFullHistory()" class="px-6 py-3 bg-white/5 border border-white/5 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 transition-all">View All Results (${playedMatches.length})</button></div>`;
@@ -1730,6 +1833,7 @@ function renderSchedule() {
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 // [UPDATED] createMatchResultCard: Shows Submitters Name
@@ -2531,13 +2635,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // 1. GENERATE THE PREVIEW
-// [CORRECTED] showStandingsPreview: Fixed CSS typo 'h: 2px' to 'height: 2px'
 function showStandingsPreview() {
     const previewArea = document.getElementById('preview-content-area');
-    // Safety check to prevent crash if modal is missing
     if (!previewArea) return;
 
-    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    // Use Official Sorting
+    const sortedPlayers = getSmartSortedPlayers();
     
     let tableRows = sortedPlayers.map((p, i) => `
         <tr>
@@ -2551,6 +2654,7 @@ function showStandingsPreview() {
         </tr>
     `).join('');
     
+    // (Rest of the function remains the same, just injecting tableRows)
     previewArea.innerHTML = `
         <div class="export-card" id="capture-zone">
             <div class="export-header">
@@ -2584,6 +2688,7 @@ function showStandingsPreview() {
     openModal('modal-download-preview');
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 // --- NEW FEATURE: PERSONAL CARD GENERATOR (Updated v2) ---
 
@@ -2631,22 +2736,13 @@ function togglePreviewID() {
 // --- NEW FEATURE: PERSONAL CARD
 function showPersonalCardPreview() {
     const myID = localStorage.getItem('slc_user_id');
-    const p = state.players.find(x => x.id === myID);
+    const sortedPlayers = getSmartSortedPlayers(); // Use Official Sort
+    const p = sortedPlayers.find(x => x.id === myID);
     
     if (!p) return notify("Player Data Not Found", "x-circle");
 
     // 1. Rankings & Stats
-    const sortedByBounty = [...state.players].sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
-    const globalRank = sortedByBounty.findIndex(x => x.id === p.id) + 1;
-
-    let goalsConceded = 0;
-    state.matches.forEach(m => {
-        if (m.status === 'played') {
-            if (m.homeId === p.id) goalsConceded += (m.score?.a || 0);
-            if (m.awayId === p.id) goalsConceded += (m.score?.h || 0);
-        }
-    });
-
+    const globalRank = sortedPlayers.findIndex(x => x.id === p.id) + 1;
     const rankInfo = getRankInfo(p.bounty);
 
     // 2. Achievement
@@ -2732,7 +2828,7 @@ function showPersonalCardPreview() {
             <div class="p-card-stat"><span class="text-[7px] text-emerald-500 font-black uppercase leading-none">Wins</span><span class="text-[10px] font-black text-white leading-none">${p.wins || 0}</span></div>
             <div class="p-card-stat"><span class="text-[7px] text-gold-500 font-black uppercase leading-none">Goals (S)</span><span class="text-[10px] font-black text-white leading-none">${p.goals || 0}</span></div>
             <div class="p-card-stat"><span class="text-[7px] text-rose-500 font-black uppercase leading-none">Losses</span><span class="text-[10px] font-black text-white leading-none">${p.losses || 0}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-blue-400 font-black uppercase leading-none">Goals (C)</span><span class="text-[10px] font-black text-white leading-none">${goalsConceded}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-blue-400 font-black uppercase leading-none">Goals (C)</span><span class="text-[10px] font-black text-white leading-none">${p._conceded || 0}</span></div>
         </div>
 
         <div class="p-card-footer flex items-center justify-center flex-col">
@@ -2748,6 +2844,7 @@ function showPersonalCardPreview() {
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 }
+
 
 // 2. EXECUTE THE ACTUAL DOWNLOAD
 // --- DOWNLOAD ENGINE (Fixed for Exact Fit) ---
@@ -3093,13 +3190,12 @@ function renderTop5Leaderboard() {
     const container = document.getElementById('top5-leaderboard-list');
     if (!container) return;
     
-    // 1. Sort Players & Get Data
-    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    // 1. Get Smart Sorted Data (Official Rules)
+    const sortedPlayers = getSmartSortedPlayers();
     const top5 = sortedPlayers.slice(0, 5);
     
     // 2. Identify Current User
     const myID = localStorage.getItem('slc_user_id');
-    const myPlayer = state.players.find(p => p.id === myID);
     const myRankIndex = sortedPlayers.findIndex(p => p.id === myID); // 0-based index
     
     container.innerHTML = '';
@@ -3108,8 +3204,6 @@ function renderTop5Leaderboard() {
     top5.forEach((p, i) => {
         const rank = getRankInfo(p.bounty);
         const isTop3 = i < 3;
-        
-        // --- STREAK CHECK ---
         const isOnFire = (p.currentStreak || 0) >= 3;
         
         let medal = '';
@@ -3117,9 +3211,12 @@ function renderTop5Leaderboard() {
         if (i === 1) medal = '🥈';
         if (i === 2) medal = '🥉';
         
-        // Determine Border Class: Flame overrides Gold/Standard
         let borderClass = isTop3 ? 'moving-border-gold' : 'moving-border';
         if (isOnFire) borderClass = 'moving-border-flame'; 
+
+        // Format GD string (e.g., +5, -2, 0)
+        const gdSign = p._gd > 0 ? '+' : '';
+        const gdDisplay = `${gdSign}${p._gd}`;
 
         container.innerHTML += `
             <div class="${borderClass} p-[1px] rounded-[1.4rem] mb-2">
@@ -3135,13 +3232,14 @@ function renderTop5Leaderboard() {
                             <div class="flex items-center gap-1 mb-1">
                                 <h3 class="text-[11px] font-black text-white truncate">${p.name}</h3>
                                 ${medal ? `<span class="text-xs">${medal}</span>` : ''}
-                                ${isOnFire ? `<span class="text-[7px] bg-orange-500/20 text-orange-500 px-1.5 py-0.5 rounded font-black uppercase border border-orange-500/30 tracking-wider">🔥 ${p.currentStreak} Streak</span>` : ''}
+                                ${isOnFire ? `<span class="text-[7px] bg-orange-500/20 text-orange-500 px-1.5 py-0.5 rounded font-black uppercase border border-orange-500/30 tracking-wider">🔥 ${p.currentStreak}</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-[7px] ${rank.color} font-black uppercase">${rank.name}</span>
                                 <span class="text-[7px] text-slate-500">•</span>
-                                <span class="text-[7px] text-slate-500 font-bold">${p.mp || 0}M ${p.wins || 0}W ${p.draws || 0}D ${p.losses || 0}L</span>
-
+                                <span class="text-[7px] text-slate-400 font-bold">
+                                    ${p.mp||0}M ${p.wins||0}W ${p.draws||0}D ${p.losses||0}L • <span class="${p._gd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">GD ${gdDisplay}</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -3155,29 +3253,24 @@ function renderTop5Leaderboard() {
     });
 
     // 4. --- PERSONAL RANKING (If outside Top 5) ---
-    // This section now handles the FLAME check for "Your Rank" as well
-    if (myPlayer && myRankIndex >= 5) {
-        const p = myPlayer;
+    if (myID && myRankIndex >= 5) {
+        const p = sortedPlayers[myRankIndex];
         const rank = getRankInfo(p.bounty);
-        
-        // --- STREAK CHECK FOR SELF ---
         const isOnFire = (p.currentStreak || 0) >= 3;
-
-        // Determine Border Class for Self
+        
         let borderClass = 'moving-border-blue';
         if (isOnFire) borderClass = 'moving-border-flame';
 
-        // A. Visual Separator
+        const gdSign = p._gd > 0 ? '+' : '';
+        const gdDisplay = `${gdSign}${p._gd}`;
+
         container.innerHTML += `
             <div class="flex items-center gap-2 my-3 opacity-60">
                 <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
                 <span class="text-[7px] font-black text-emerald-500 uppercase tracking-[0.2em]">Your Rank</span>
                 <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
             </div>
-        `;
-
-        // B. Personal Row (Highlighted)
-        container.innerHTML += `
+            
             <div class="${borderClass} p-[1px] rounded-[1.4rem] animate-pop-in shadow-lg shadow-emerald-500/5">
                 <div class="bg-slate-900 p-3 rounded-[1.3rem] flex items-center relative z-10 border border-emerald-500/20">
                     <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -3190,13 +3283,13 @@ function renderTop5Leaderboard() {
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-1 mb-1">
                                 <h3 class="text-[11px] font-black ${isOnFire ? 'text-orange-400' : 'text-emerald-400'} truncate">${p.name} (You)</h3>
-                                ${isOnFire ? `<span class="text-[7px] bg-orange-500/20 text-orange-500 px-1.5 py-0.5 rounded font-black uppercase border border-orange-500/30 tracking-wider">🔥 ${p.currentStreak} Streak</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-[7px] ${rank.color} font-black uppercase">${rank.name}</span>
                                 <span class="text-[7px] text-slate-500">•</span>
-                                <span class="text-[7px] text-slate-400 font-bold">${p.mp || 0}M ${p.wins || 0}W ${p.draws || 0}D ${p.losses || 0}L</span>
-
+                                <span class="text-[7px] text-slate-400 font-bold">
+                                    ${p.mp||0}M ${p.wins||0}W ${p.draws||0}D ${p.losses||0}L • <span class="${p._gd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">GD ${gdDisplay}</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -3210,23 +3303,24 @@ function renderTop5Leaderboard() {
     }
 }
 
-
-
-
 function renderFullLeaderboard() {
     const container = document.getElementById('full-leaderboard-list');
     if (!container) return;
     
-    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    // Use the official sorting engine
+    const sortedPlayers = getSmartSortedPlayers();
     container.innerHTML = '';
     
     sortedPlayers.forEach((p, i) => {
         const isTop3 = i < 3;
         const isOnFire = (p.currentStreak || 0) >= 3;
         
-        // Determine Border
         let borderClass = isTop3 ? 'moving-border-gold' : 'moving-border-blue';
         if (isOnFire) borderClass = 'moving-border-flame';
+
+        // GD Formatting
+        const gdSign = p._gd > 0 ? '+' : '';
+        const gdColor = p._gd >= 0 ? 'text-slate-400' : 'text-rose-500';
 
         container.innerHTML += `
             <div class="${borderClass} p-[1px] rounded-[1.2rem]">
@@ -3241,7 +3335,7 @@ function renderFullLeaderboard() {
                             ${isOnFire ? `<i data-lucide="flame" class="w-3 h-3 text-orange-500 fill-orange-500"></i>` : ''}
                         </div>
                         <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
-                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0}
+                           ${p.mp||0}M ${p.wins||0}W ${p.draws||0}D ${p.losses||0}L • <span class="${gdColor}">GD ${gdSign}${p._gd}</span>
                         </p>
                     </div>
                     <span class="font-black ${isOnFire ? 'text-orange-400' : 'text-emerald-400'} text-xs ml-2">${p.bounty.toLocaleString()}</span>
@@ -3251,6 +3345,8 @@ function renderFullLeaderboard() {
     });
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
+
 
 
 // Update the renderTopScorers function to work with the new section:
