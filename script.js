@@ -19,7 +19,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 // --- CONSTANTS ---
-const ADMIN_KEY = "SLCADMIN2026";
+const ADMIN_KEY = "001100";
 const P2_LIMIT_HIGH = 3;
 const P2_LIMIT_STD = 2;
 const STARTING_BOUNTY = 500;
@@ -337,7 +337,9 @@ async function registerPlayerOnline() {
         mp: 0, wins: 0, draws: 0, losses: 0, 
         p2High: 0, p2Std: 0 
     };
-
+newP.bp_logs = [{
+        id: 'init', ts: Date.now(), amount: 500, cat: 'System', desc: 'Welcome Bonus'
+    }];
     try {
         await db.collection("players").doc(uniqueID).set(newP);
         localStorage.setItem('slc_user_id', uniqueID);
@@ -748,7 +750,6 @@ async function respondToChallenge(matchId, action) {
 }
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
-// --- 6. PRO DASHBOARD (SETTINGS TAB) ---
 function renderPlayerDashboard() {
     const container = document.getElementById('view-settings');
     if (!container) return;
@@ -887,7 +888,7 @@ function renderPlayerDashboard() {
             </div>`;
     }
     
-    if (state.isAdmin) {
+     if (state.isAdmin) {
         html += `
             <div class="admin-tool space-y-6 mt-8 pt-8 border-t border-white/5">
                 <h2 class="text-[10px] font-black text-rose-500 uppercase text-center tracking-[0.4em] italic">Command Center</h2>
@@ -919,7 +920,32 @@ function renderPlayerDashboard() {
                             </div>
                             <p class="text-[7px] text-slate-500 mt-2 italic">*Clear text and click POST to restore normal news.</p>
                         </div>
+                    </div>
+                </div>
 
+                <div class="moving-border-gold p-[1px] rounded-[2.6rem] shadow-xl">
+                    <div class="bg-slate-900 rounded-[2.5rem] p-6">
+                        <label class="block text-[8px] font-black text-rose-500 uppercase mb-3 tracking-widest">
+                            <i data-lucide="shield-alert" class="w-3 h-3 inline mr-1"></i> Manual Purchase Correction
+                        </label>
+                        <p class="text-[7px] text-slate-500 mb-3 font-bold">Block an item for a player who already used it.</p>
+                        
+                        <div class="space-y-2">
+                            <input type="text" id="admin-manual-id" placeholder="Enter Player SLC-ID" class="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-[10px] text-white outline-none focus:border-rose-500 uppercase font-bold">
+                            
+                            <select id="admin-manual-item" class="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-[10px] text-white outline-none focus:border-rose-500 uppercase font-bold">
+                                <option value="insurance">Insurance</option>
+                                <option value="multiplier">Multiplier</option>
+                                <option value="scout">Scout</option>
+                                <option value="privacy">Privacy</option>
+                                <option value="decline_pass">Decline Pass</option>
+                                <option value="vault_access">The Vault</option>
+                            </select>
+
+                            <button onclick="manualMarkAsSold(document.getElementById('admin-manual-id').value, document.getElementById('admin-manual-item').value)" class="w-full py-3 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg active:scale-95 transition-all">
+                                Mark as SOLD OUT
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -933,13 +959,20 @@ function renderPlayerDashboard() {
 
                 <div id="admin-players-list" class="space-y-2"></div>
 
-<button onclick="adminSyncGoals()" class="w-full py-4 mb-3 bg-blue-600/10 border border-blue-500/30 text-blue-500 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-blue-600 hover:text-white transition-all">
-    <i data-lucide="refresh-cw" class="w-3 h-3 inline mr-2"></i> Sync Goal History
-</button>
-<button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
+                <button onclick="adminSyncGoals()" class="w-full py-4 mb-1 bg-blue-600/10 border border-blue-500/30 text-blue-500 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                    <i data-lucide="refresh-cw" class="w-3 h-3 inline mr-2"></i> Sync Goal History
+                </button>
+
+                <button onclick="syncLegacyPurchases()" class="w-full py-4 mb-3 bg-gold-600/10 border border-gold-500/30 text-gold-500 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-gold-600 hover:text-white transition-all">
+                    <i data-lucide="database" class="w-3 h-3 inline mr-2"></i> Sync Legacy Purchases
+                </button>
+<button onclick="forceRebuildHistory()" class="w-full py-4 mb-3 bg-purple-600/10 border border-purple-500/30 text-purple-400 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-purple-600 hover:text-white transition-all">
+                    <i data-lucide="history" class="w-3 h-3 inline mr-2"></i> Reconstruct All History
+                </button>
+                <button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
             </div>`;
     } else {
-        // --- NEW: EDIT PROFILE BUTTON (Only for Players) ---
+        // --- PLAYER VIEW BUTTONS ---
         html += `
             <div class="mt-8 mb-4">
                  <div class="moving-border-blue p-[1px] rounded-[2.1rem] shadow-xl group cursor-pointer active:scale-95 transition-transform" onclick="openEditProfile()">
@@ -957,6 +990,24 @@ function renderPlayerDashboard() {
                     </div>
                  </div>
             </div>`;
+
+            // [NEW] TRANSACTION HISTORY BUTTON
+            html += `
+            <div class="mt-2 mb-2">
+                 <button onclick="openBPHistory()" class="w-full py-4 bg-slate-900 border border-white/10 rounded-[1.8rem] relative overflow-hidden group shadow-xl active:scale-95 transition-all flex items-center justify-between px-6">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-gold-500/10 p-2 rounded-full border border-gold-500/20">
+                            <i data-lucide="history" class="w-5 h-5 text-gold-500"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-[9px] font-black text-white uppercase tracking-widest">Transaction History</p>
+                            <p class="text-[7px] text-slate-500 font-bold uppercase mt-0.5">Track Earnings & Spendings</p>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-gold-500 transition-colors"></i>
+                 </button>
+            </div>`;
+
             html += `
             <div class="mt-2 mb-4">
                  <button onclick="showPersonalCardPreview()" class="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-900 border border-gold-500/30 rounded-[1.8rem] relative overflow-hidden group shadow-xl active:scale-95 transition-all">
@@ -973,6 +1024,7 @@ function renderPlayerDashboard() {
                  </button>
             </div>`;
     }
+
     
     // Footer
     html += `
@@ -1012,11 +1064,6 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-
-
-
-
-
 
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
@@ -1326,8 +1373,17 @@ async function saveMatchResult() {
         
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         await batch.commit();
-        
-        // Custom message for sanctioned matches
+            // [NEW] Log Match Result Transactions
+    // Note: We use the calculated hBP and aBP variables from your existing logic
+    const hDesc = `Match vs ${aObj?.name || 'Opponent'}`;
+    const aDesc = `Match vs ${hObj?.name || 'Opponent'}`;
+    
+    // Determine category based on points
+    const hCat = hBP > 0 ? 'Match Win' : (hBP < 0 ? 'Match Loss' : 'Match Draw');
+    const aCat = aBP > 0 ? 'Match Win' : (aBP < 0 ? 'Match Loss' : 'Match Draw');
+
+    logTransaction(m.homeId, hBP, hCat, hDesc);
+    logTransaction(m.awayId, aBP, aCat, aDesc);
         if (sanctionPercent > 0) {
             notify(`Sanction Applied: Reward -${sanctionPercent}%`, "alert-triangle");
         } else {
@@ -1432,7 +1488,7 @@ async function checkAndRewardMilestones(playerId) {
             updates['bounty'] = firebase.firestore.FieldValue.increment(bonusBP);
             
             await ref.update(updates);
-            
+            logTransaction(playerId, bonusBP, 'Achievement', `Hit ${milestonesReached.join(', ')} Goals`);
             // Trigger Notification
             notify(`${p.name} HIT ${milestonesReached.join(', ')} GOALS! +${bonusBP} BP`, "trophy");
             
@@ -2385,21 +2441,29 @@ function renderShop() {
     const me = state.players.find(p => p.id === myID);
     if (!me) return; // Not logged in
 
-    // Initialize inventory if missing
+    // Initialize data containers
     const inv = me.inventory || {};
     const active = me.active_effects || {};
+    const history = me.purchase_history || {}; // NEW: Track lifetime purchases
 
     Object.keys(SHOP_ITEMS).forEach(key => {
         const item = SHOP_ITEMS[key];
         const isOwned = (inv[key] || 0) > 0;
         const isActive = active[key] || (key === 'vault_access' && me.vault_data?.amount > 0);
-        
+        const hasBoughtEver = history[key] === true; // NEW: Check if bought ever
+
         // Determine Button State
         let btnText = "PURCHASE";
         let btnClass = "bg-transparent text-slate-500 border border-slate-700";
         let statusIcon = "";
+        let cardOpacity = "opacity-100";
 
-        if (isActive) {
+        if (hasBoughtEver && !isActive && !isOwned) {
+            // Case: Bought before, consumed/used, and now forbidden
+            btnText = "SOLD OUT";
+            btnClass = "bg-slate-900/50 text-slate-600 border border-slate-800 cursor-not-allowed";
+            cardOpacity = "opacity-50 grayscale";
+        } else if (isActive) {
             btnText = "ACTIVE";
             btnClass = "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 cursor-default";
             statusIcon = `<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981] animate-pulse"></div>`;
@@ -2410,7 +2474,8 @@ function renderShop() {
 
         // Card HTML
         const card = document.createElement('div');
-        card.className = `relative group cursor-pointer active:scale-95 transition-all`;
+        card.className = `relative group cursor-pointer active:scale-95 transition-all ${cardOpacity}`;
+        // If sold out, clicking does nothing or shows modal with Sold Out info
         card.onclick = () => openShopItem(key);
 
         card.innerHTML = `
@@ -2435,6 +2500,7 @@ function renderShop() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+
 let selectedShopItem = null;
 
 function openShopItem(key) {
@@ -2458,8 +2524,11 @@ function openShopItem(key) {
     const btn = document.getElementById('btn-shop-action');
     const inv = me?.inventory || {};
     const active = me?.active_effects || {};
+    const history = me?.purchase_history || {}; // NEW
+    
     const isOwned = (inv[key] || 0) > 0;
     const isActive = active[key];
+    const hasBoughtEver = history[key] === true; // NEW
 
     if (key === 'vault_access' && me?.vault_data?.amount > 0) {
         btn.innerText = "VAULT LOCKED";
@@ -2470,10 +2539,17 @@ function openShopItem(key) {
         btn.onclick = null;
         btn.className = "flex-1 py-3 bg-emerald-900/50 text-emerald-500 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed";
     } else if (isOwned) {
+        // Player has it but hasn't used it yet
         btn.innerText = "ACTIVATE NOW";
         btn.onclick = () => key === 'vault_access' ? openVaultModal() : activateShopItem(key);
         btn.className = "flex-1 py-3 bg-white text-slate-900 text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
+    } else if (hasBoughtEver) {
+        // NEW: Player bought it, used it, and now is blocked from buying again
+        btn.innerText = "SOLD OUT (MAX 1)";
+        btn.onclick = () => notify("Item limit reached (1 Per Player)", "lock");
+        btn.className = "flex-1 py-3 bg-slate-800 text-slate-500 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed border border-slate-700";
     } else {
+        // Player has never bought it
         btn.innerText = `PURCHASE (-${item.price})`;
         btn.onclick = () => buyShopItem(key);
         btn.className = "flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
@@ -2482,10 +2558,16 @@ function openShopItem(key) {
     document.getElementById('modal-shop-details').classList.remove('hidden');
 }
 
+
 async function buyShopItem(key) {
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
     const item = SHOP_ITEMS[key];
+
+    // Double check history here for security
+    if (me.purchase_history && me.purchase_history[key]) {
+        return notify("You have already purchased this item once.", "alert-circle");
+    }
 
     if (me.bounty < item.price) return notify("Insufficient Funds", "alert-circle");
     
@@ -2497,12 +2579,18 @@ async function buyShopItem(key) {
         batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-item.price) });
         // Add to Inventory
         batch.update(ref, { [`inventory.${key}`]: 1 });
+        // NEW: Mark as purchased forever
+        batch.update(ref, { [`purchase_history.${key}`]: true });
         
         await batch.commit();
+        logTransaction(myID, -item.price, 'Shop', `Purchased ${item.name}`);
+
+notify(`${item.name} Purchased!`, "shopping-bag");
         notify(`${item.name} Purchased!`, "shopping-bag");
         document.getElementById('modal-shop-details').classList.add('hidden');
     } catch (e) { notify("Transaction Failed", "x-circle"); }
 }
+
 
 async function activateShopItem(key) {
     const myID = localStorage.getItem('slc_user_id');
@@ -2563,6 +2651,9 @@ async function depositToVault() {
         });
 
         await batch.commit();
+        logTransaction(myID, -amount, 'Vault', 'Locked in Vault');
+
+    notify(`${amount} BP Locked in Vault!`, "lock");
         notify(`${amount} BP Locked in Vault!`, "lock");
         document.getElementById('modal-vault').classList.add('hidden');
     } catch (e) { notify("Vault Error", "x-circle"); }
@@ -2585,6 +2676,9 @@ async function checkVaultStatus() {
                 batch.update(ref, { vault_data: firebase.firestore.FieldValue.delete() });
                 
                 await batch.commit();
+                logTransaction(myID, me.vault_data.amount, 'Vault', 'Funds Unlocked');
+
+    notify("Vault Unlocked: Funds Returned", "unlock");
                 notify("Vault Unlocked: Funds Returned", "unlock");
             } catch (e) { console.error("Vault Return Error", e); }
         }
@@ -3598,4 +3692,250 @@ function dismissMatchAlert() {
     const modal = document.getElementById('modal-match-alert');
     modal.classList.add('hidden'); // Just hide, don't remove animation classes so it works next time
     if (alertInterval) clearInterval(alertInterval);
+}
+
+// --- ADMIN TOOL: MANUAL HISTORY OVERRIDE ---
+async function manualMarkAsSold(targetId, itemKey) {
+    if (!targetId || !itemKey) return notify("Missing ID or Item", "alert-circle");
+    
+    // Normalize ID
+    const pid = targetId.trim().toUpperCase();
+    
+    try {
+        const doc = await db.collection("players").doc(pid).get();
+        if (!doc.exists) return notify("Player ID not found", "x-circle");
+        
+        // Update their history to say "True" (Bought)
+        await db.collection("players").doc(pid).update({
+            [`purchase_history.${itemKey}`]: true
+        });
+        
+        notify(`Marked '${itemKey}' as SOLD OUT for ${doc.data().name}`, "check-circle");
+        
+    } catch(e) {
+        console.error(e);
+        notify("Update Failed", "x-circle");
+    }
+}
+
+// ==========================================
+// [NEW FEATURE] BP TRANSACTION HISTORY ENGINE
+// ==========================================
+
+// 1. Helper to Save Log to Database
+async function logTransaction(playerId, amount, category, description) {
+    if (!playerId) return;
+    const ref = db.collection("players").doc(playerId);
+    
+    const logEntry = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        ts: Date.now(),
+        amount: parseInt(amount),
+        cat: category, // e.g., 'Match', 'Shop', 'Vault', 'Bonus'
+        desc: description
+    };
+    
+    // Use arrayUnion to add to the list
+    try {
+        await ref.update({
+            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
+        });
+        console.log("Transaction logged for " + playerId);
+    } catch (e) {
+        console.error("Log Error:", e);
+    }
+}
+
+// 2. Render the History Modal
+async function openBPHistory() {
+    const myID = localStorage.getItem('slc_user_id');
+    const list = document.getElementById('bp-history-list');
+    const totalInEl = document.getElementById('hist-total-in');
+    const totalOutEl = document.getElementById('hist-total-out');
+    
+    if (!myID || !list) return;
+    
+    list.innerHTML = `<div class="text-center py-10"><i data-lucide="loader" class="w-6 h-6 text-gold-500 animate-spin mx-auto"></i></div>`;
+    document.getElementById('modal-bp-history').classList.remove('hidden');
+    
+    try {
+        const doc = await db.collection("players").doc(myID).get();
+        if (!doc.exists) return;
+        
+        const data = doc.data();
+        const logs = data.bp_logs || [];
+        
+        // Sort: Newest first
+        logs.sort((a, b) => b.ts - a.ts);
+        
+        // Calc Totals
+        let totalIn = 0;
+        let totalOut = 0;
+        
+        let html = '';
+        
+        if (logs.length === 0) {
+            html = `<p class="text-center text-[8px] text-slate-500 font-black uppercase mt-10">No Transactions Recorded</p>`;
+        } else {
+            logs.forEach(log => {
+                const isGain = log.amount >= 0;
+                if (isGain) totalIn += log.amount;
+                else totalOut += Math.abs(log.amount);
+                
+                const dateStr = new Date(log.ts).toLocaleDateString() + " " + new Date(log.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const color = isGain ? 'text-emerald-400' : 'text-rose-500';
+                const bg = isGain ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20';
+                const sign = isGain ? '+' : '';
+                const icon = isGain ? 'arrow-down-left' : 'arrow-up-right';
+                
+                html += `
+                <div class="bg-slate-950/80 p-3 rounded-xl border border-white/5 flex items-center justify-between animate-pop-in">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full ${bg} border flex items-center justify-center">
+                            <i data-lucide="${icon}" class="w-4 h-4 ${color}"></i>
+                        </div>
+                        <div>
+                            <p class="text-[9px] font-black text-white uppercase tracking-wide">${log.cat}</p>
+                            <p class="text-[8px] font-bold text-slate-500 truncate max-w-[120px]">${log.desc}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-[10px] font-black ${color}">${sign}${log.amount}</p>
+                        <p class="text-[6px] text-slate-600 font-bold uppercase">${dateStr}</p>
+                    </div>
+                </div>`;
+            });
+        }
+        
+        list.innerHTML = html;
+        totalInEl.innerText = totalIn.toLocaleString();
+        totalOutEl.innerText = totalOut.toLocaleString();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        
+    } catch (e) {
+        console.error(e);
+        list.innerHTML = `<p class="text-center text-rose-500 text-[8px]">Error loading data</p>`;
+    }
+}
+
+// ==========================================
+// [ADMIN TOOL] TIME MACHINE (HISTORY SYNC)
+// ==========================================
+async function forceRebuildHistory() {
+    askConfirm("DANGER: WIPE & REBUILD ALL HISTORY?", async () => {
+        const notifId = notify("Time Machine Started...", "loader");
+        const batch = db.batch();
+        const players = state.players;
+        const matches = state.matches.filter(m => m.status === 'played');
+
+        console.log(`Analyzing ${players.length} players and ${matches.length} matches...`);
+
+        // Iterate every player
+        players.forEach(p => {
+            const pid = p.id;
+            const pRef = db.collection("players").doc(pid);
+            let reconstructedLogs = [];
+
+            // 1. ADD: Initial Welcome Bonus (The Foundation)
+            reconstructedLogs.push({
+                id: `init_${pid}`,
+                ts: 1704067200000, // Jan 1 2024 (Approx start)
+                amount: 500,
+                cat: 'System',
+                desc: 'Initial Bounty Grant'
+            });
+
+            // 2. ADD: Match History
+            matches.forEach(m => {
+                // Skip if this player wasn't in this match
+                if (m.homeId !== pid && m.awayId !== pid) return;
+
+                const isHome = m.homeId === pid;
+                const oppId = isHome ? m.awayId : m.homeId;
+                const oppName = state.players.find(x => x.id === oppId)?.name || "Opponent";
+                
+                let amount = 0;
+                let cat = "Match";
+
+                // A. TRY EXACT DATA (If available from newer versions)
+                if (m.resultDelta) {
+                    amount = isHome ? m.resultDelta.h : m.resultDelta.a;
+                } 
+                // B. ESTIMATE LEGACY DATA (If exact delta missing)
+                else {
+                    const sH = parseInt(m.score.h);
+                    const sA = parseInt(m.score.a);
+                    
+                    if (sH === sA) {
+                        amount = -30; // Standard Draw Penalty
+                    } else if ((isHome && sH > sA) || (!isHome && sA > sH)) {
+                        amount = 100; // Standard Win
+                    } else {
+                        amount = -50; // Standard Loss
+                    }
+                }
+
+                cat = amount > 0 ? 'Match Win' : (amount < 0 ? 'Match Loss' : 'Match Draw');
+
+                reconstructedLogs.push({
+                    id: `legacy_match_${m.id}`,
+                    ts: m.createdAt || (Date.now() - 1000000), // Use match time or older date
+                    amount: parseInt(amount),
+                    cat: cat,
+                    desc: `Vs ${oppName}`
+                });
+            });
+
+            // 3. ADD: Purchase History
+            // Check 'purchase_history' OR inferred from 'inventory'
+            const purchases = p.purchase_history || {};
+            const inventory = p.inventory || {};
+            
+            // Merge both sources
+            const allItems = new Set([...Object.keys(purchases), ...Object.keys(inventory)]);
+
+            allItems.forEach(key => {
+                // Skip vault items as they are deposits, not costs
+                if (key === 'vault_access') return; 
+                
+                const itemDef = SHOP_ITEMS[key];
+                if (itemDef) {
+                    reconstructedLogs.push({
+                        id: `legacy_buy_${key}`,
+                        ts: Date.now(), // No date for legacy buys, set to now
+                        amount: -itemDef.price,
+                        cat: 'Shop',
+                        desc: `Purchased ${itemDef.name}`
+                    });
+                }
+            });
+
+            // 4. ADD: Vault Logic
+            if (p.vault_data && p.vault_data.amount > 0) {
+                 reconstructedLogs.push({
+                    id: `legacy_vault_lock`,
+                    ts: p.vault_data.depositedAt || Date.now(),
+                    amount: -p.vault_data.amount,
+                    cat: 'Vault',
+                    desc: 'Locked Funds (Active)'
+                });
+            }
+
+            // 5. SORT & SAVE
+            // Sort by timestamp (newest first)
+            reconstructedLogs.sort((a, b) => b.ts - a.ts);
+
+            // Overwrite the log array
+            batch.update(pRef, { bp_logs: reconstructedLogs });
+        });
+
+        try {
+            await batch.commit();
+            notify("History Successfully Rebuilt!", "check-circle");
+            setTimeout(() => location.reload(), 2000);
+        } catch (e) {
+            console.error(e);
+            notify("Rebuild Failed", "x-circle");
+        }
+    });
 }
