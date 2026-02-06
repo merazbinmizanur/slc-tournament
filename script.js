@@ -2455,7 +2455,7 @@ function togglePreviewID() {
 
 
 // --- NEW FEATURE: PERSONAL CARD GENERATOR (Updated v5 - Illustrations & Animation) ---
-// --- PERSONAL CARD GENERATOR (Alignment Fixed) ---
+// --- PERSONAL CARD GENERATOR (Big Picture & One-Line ID) ---
 function showPersonalCardPreview() {
     const myID = localStorage.getItem('slc_user_id');
     const p = state.players.find(x => x.id === myID);
@@ -2490,7 +2490,7 @@ function showPersonalCardPreview() {
                     <i data-lucide="trophy" class="w-3 h-3 ${colors[scorerIndex]}"></i>
                 </div>
                 <div>
-                    <p class="text-[6px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-0.5">Achievement</p>
+                    <p class="text-[6px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Achievement</p>
                     <p class="text-[8px] font-black text-white uppercase tracking-wide leading-none">${medals[scorerIndex]}</p>
                 </div>
             </div>`;
@@ -2499,11 +2499,11 @@ function showPersonalCardPreview() {
     // 3. Avatar & Privacy
     let imgHTML = p.avatar 
         ? `<img src="${p.avatar}" class="p-card-avatar-img" crossorigin="anonymous">`
-        : `<div class="p-card-avatar-img flex items-center justify-center text-6xl font-black text-white bg-slate-800">${(p.name || "U").charAt(0).toUpperCase()}</div>`;
+        : `<div class="p-card-avatar-img flex items-center justify-center text-7xl font-black text-white bg-slate-800">${(p.name || "U").charAt(0).toUpperCase()}</div>`;
     
     const maskedID = p.id.replace(/\d/g, '*');
 
-    // 4. HTML (With 'leading-none' and Flex centering fixes)
+    // 4. HTML
     const html = `
     <div class="w-full max-w-[400px] mx-auto mb-4 flex flex-col items-center gap-3">
         <button onclick="togglePreviewID()" class="flex items-center gap-2 px-6 py-2.5 bg-slate-800 border border-white/10 rounded-full hover:bg-slate-700 transition-colors active:scale-95 shadow-lg">
@@ -2513,58 +2513,58 @@ function showPersonalCardPreview() {
         <div id="privacy-warning" class="bg-rose-950/30 px-4 py-2 rounded-xl border border-rose-500/20 text-center animate-pulse">
             <p class="text-[8px] font-bold text-rose-500 uppercase tracking-wide leading-tight">
                 <i data-lucide="alert-triangle" class="w-3 h-3 inline mr-1 mb-0.5"></i>
-                Security Alert: Your ID is visible. Hide it to prevent unauthorized access.
+                Security Alert: Your ID is visible.
             </p>
         </div>
     </div>
 
     <div class="p-card-container" id="capture-zone">
-        <div class="p-card-bg-decoration"></div>
-        <div class="p-card-orb orb-1"></div>
-        <div class="p-card-orb orb-2"></div>
-        <div class="p-card-orb orb-3"></div>
+        
+        <div class="p-card-cyber-pattern"></div>
 
         <div class="p-card-header flex flex-col items-center justify-center">
-            <p class="text-[7px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1 leading-none">Synthex Legion Chronicles</p>
-            <h1 class="text-base font-black text-white uppercase italic tracking-tighter leading-none mb-2">SLC Bounty Hunter</h1>
-            
-            <div class="border border-white/5 bg-slate-900/50 px-2 py-1 rounded-md flex items-center justify-center">
-                <p class="text-[6px] font-bold text-slate-500 uppercase tracking-widest leading-none">Official Player Profile</p>
+            <p class="text-[7px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1 leading-none text-center">Synthex Legion Chronicles</p>
+            <h1 class="text-base font-black text-white uppercase italic tracking-tighter leading-none mb-2 text-center">SLC Bounty Hunter</h1>
+            <div class="border border-white/10 bg-slate-900/50 px-3 py-1 rounded flex items-center justify-center h-5">
+                <p class="text-[6px] font-bold text-slate-500 uppercase tracking-widest leading-none m-0 p-0">Official Player Profile</p>
             </div>
         </div>
 
         <div class="p-card-avatar-box">
             ${imgHTML}
-            <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-slate-900 h-6 px-3 rounded-full border border-gold-500/50 shadow-lg whitespace-nowrap z-20 flex items-center justify-center">
-                <span id="preview-slc-id" data-full="${p.id}" data-masked="${maskedID}" class="text-[8px] font-black text-gold-500 uppercase tracking-widest leading-none">SLC-ID: ${p.id}</span>
+            
+            <div class="p-card-id-pill">
+                <span id="preview-slc-id" data-full="${p.id}" data-masked="${maskedID}" class="text-[8px] font-black text-gold-500 uppercase tracking-widest leading-none whitespace-nowrap">SLC-ID: ${p.id}</span>
             </div>
         </div>
 
-        <div class="p-card-name-strip">
-            <h2 class="text-xl font-black text-white uppercase italic tracking-tight drop-shadow-lg relative z-10 leading-none mb-1">${p.name}</h2>
+        <div class="p-card-name-strip flex flex-col items-center justify-center">
+            <h2 class="text-xl font-black text-white uppercase italic tracking-tight drop-shadow-lg relative z-10 leading-none mb-2 text-center">${p.name}</h2>
             
             <div class="flex items-center justify-center gap-2 relative z-10">
-                <div class="bg-white/10 h-4 px-2 rounded border border-white/10 flex items-center justify-center">
-                    <span class="text-[8px] font-black text-white leading-none">#${globalRank} GLOBAL</span>
+                <div class="bg-white/5 h-5 px-2 rounded border border-white/10 flex items-center justify-center">
+                    <span class="text-[8px] font-black text-white leading-none pt-[1px]">#${globalRank} GLOBAL</span>
                 </div>
-                <span class="text-[8px] font-bold ${rankInfo.color} uppercase tracking-[0.2em] leading-none">${rankInfo.name} Tier</span>
+                <div class="h-5 flex items-center justify-center">
+                    <span class="text-[8px] font-bold ${rankInfo.color} uppercase tracking-[0.2em] leading-none pt-[1px]">${rankInfo.name} Tier</span>
+                </div>
             </div>
         </div>
 
         ${achievementHTML}
 
         <div class="p-card-grid">
-            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase p-fix-align">Matches</span><span class="text-[10px] font-black text-white p-fix-align">${p.mp || 0}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase p-fix-align">Bounty</span><span class="text-[10px] font-black text-emerald-400 p-fix-align">${(p.bounty || 0).toLocaleString()}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-emerald-500 font-black uppercase p-fix-align">Wins</span><span class="text-[10px] font-black text-white p-fix-align">${p.wins || 0}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-gold-500 font-black uppercase p-fix-align">Goals (S)</span><span class="text-[10px] font-black text-white p-fix-align">${p.goals || 0}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-rose-500 font-black uppercase p-fix-align">Losses</span><span class="text-[10px] font-black text-white p-fix-align">${p.losses || 0}</span></div>
-            <div class="p-card-stat"><span class="text-[7px] text-blue-400 font-black uppercase p-fix-align">Goals (C)</span><span class="text-[10px] font-black text-white p-fix-align">${goalsConceded}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase leading-none">Matches</span><span class="text-[10px] font-black text-white leading-none">${p.mp || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-slate-500 font-black uppercase leading-none">Bounty</span><span class="text-[10px] font-black text-emerald-400 leading-none">${(p.bounty || 0).toLocaleString()}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-emerald-500 font-black uppercase leading-none">Wins</span><span class="text-[10px] font-black text-white leading-none">${p.wins || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-gold-500 font-black uppercase leading-none">Goals (S)</span><span class="text-[10px] font-black text-white leading-none">${p.goals || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-rose-500 font-black uppercase leading-none">Losses</span><span class="text-[10px] font-black text-white leading-none">${p.losses || 0}</span></div>
+            <div class="p-card-stat"><span class="text-[7px] text-blue-400 font-black uppercase leading-none">Goals (C)</span><span class="text-[10px] font-black text-white leading-none">${goalsConceded}</span></div>
         </div>
 
-        <div class="p-card-footer">
-            <div class="h-[1px] w-10 bg-white/10 mx-auto mb-2"></div>
-            <p class="text-[6px] text-slate-600 font-black uppercase tracking-[0.2em] leading-none">Generated via SLC-OS • ${new Date().toLocaleString()}</p>
+        <div class="p-card-footer flex items-center justify-center flex-col">
+            <div class="h-[1px] w-10 bg-white/10 mb-2"></div>
+            <p class="text-[6px] text-slate-600 font-black uppercase tracking-[0.2em] leading-none text-center">Generated via SLC-OS • ${new Date().toLocaleString()}</p>
         </div>
     </div>`;
 
