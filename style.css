@@ -534,21 +534,21 @@ button[onclick="showStandingsPreview()"] {
     gap: 0.5rem;
 }
 
-/* --- PERSONAL CARD EXPORT STYLING (Fixed for Download) --- */
+/* --- PERSONAL CARD EXPORT STYLING (Fixed Alignment) --- */
 .p-card-container {
     background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 0;
     padding: 0;
-    width: 400px; /* FIXED WIDTH for consistency */
+    width: 400px; /* FIXED WIDTH */
     margin: 0 auto;
     font-family: 'Outfit', sans-serif;
     position: relative;
     overflow: hidden;
-    flex-shrink: 0; /* Prevents shrinking in export container */
+    flex-shrink: 0;
 }
 
-/* DECORATIONS (Optimized for html2canvas) */
+/* DECORATIONS */
 .p-card-bg-decoration {
     position: absolute;
     inset: 0;
@@ -559,7 +559,6 @@ button[onclick="showStandingsPreview()"] {
     pointer-events: none;
 }
 
-/* Updated Orbs: Using Gradients instead of Blur Filters for clean download */
 .p-card-orb {
     position: absolute;
     border-radius: 50%;
@@ -570,23 +569,20 @@ button[onclick="showStandingsPreview()"] {
 
 .orb-1 { 
     width: 250px; height: 250px; 
-    background: radial-gradient(circle, #10b981 0%, transparent 70%); /* Emerald Gradient */
+    background: radial-gradient(circle, #10b981 0%, transparent 70%); 
     top: -80px; right: -80px; 
 }
-
 .orb-2 { 
     width: 300px; height: 300px; 
-    background: radial-gradient(circle, #f59e0b 0%, transparent 70%); /* Gold Gradient */
+    background: radial-gradient(circle, #f59e0b 0%, transparent 70%); 
     bottom: -100px; left: -80px; 
     animation-delay: 4s; 
 }
-
 .orb-3 { 
     width: 200px; height: 200px; 
-    background: radial-gradient(circle, #3b82f6 0%, transparent 70%); /* Blue Gradient */
+    background: radial-gradient(circle, #3b82f6 0%, transparent 70%); 
     top: 40%; left: 20%; 
-    opacity: 0.4;
-    animation-delay: 2s; 
+    opacity: 0.4; animation-delay: 2s; 
 }
 
 @keyframes floatCard {
@@ -594,14 +590,14 @@ button[onclick="showStandingsPreview()"] {
     50% { transform: translate(10px, -15px); }
 }
 
-/* CONTENT Z-INDEXING */
+/* CONTENT ALIGNMENT FIXES */
 .p-card-header, .p-card-avatar-box, .p-card-name-strip, .p-card-achievement, .p-card-grid, .p-card-footer {
     position: relative; z-index: 10;
 }
 
 .p-card-header {
     background: radial-gradient(circle at center, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
-    padding: 25px 20px 5px 20px;
+    padding: 25px 20px 10px 20px;
     text-align: center;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -626,7 +622,7 @@ button[onclick="showStandingsPreview()"] {
 .p-card-name-strip {
     background: rgba(255, 255, 255, 0.05);
     border-y: 1px solid rgba(255, 255, 255, 0.05);
-    padding: 10px 0;
+    padding: 12px 0;
     text-align: center;
     margin: 10px 0 15px 0;
     backdrop-filter: blur(5px);
@@ -645,12 +641,28 @@ button[onclick="showStandingsPreview()"] {
     gap: 6px; padding: 0 25px; margin-bottom: 20px;
 }
 
+/* FIXED STAT BOX ALIGNMENT */
 .p-card-stat {
     background: rgba(15, 23, 42, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 10px;
-    padding: 6px 12px;
-    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; /* Balanced Padding */
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; /* Critical for vertical centering */
+}
+
+/* Helper to remove invisible line-height space */
+.p-fix-align {
+    line-height: 1 !important;
+    display: flex;
+    align-items: center;
+}
+
+.p-card-footer {
+    text-align: center; padding: 12px;
+    background: #020617;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .p-card-footer {
