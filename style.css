@@ -533,3 +533,113 @@ button[onclick="showStandingsPreview()"] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.5rem;
 }
+
+/* --- PERSONAL CARD EXPORT STYLING (Final Optimized) --- */
+.p-card-container {
+    background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    font-family: 'Outfit', sans-serif;
+    position: relative;
+    overflow: hidden; /* Keeps orbs inside */
+}
+
+/* DECORATIONS */
+.p-card-bg-decoration {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: 0.4;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.p-card-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(50px); /* Soft blur for nice PNG export */
+    opacity: 0.15;
+    z-index: 0;
+    animation: floatCard 8s ease-in-out infinite;
+}
+
+.orb-1 { width: 200px; height: 200px; background: #10b981; top: -50px; right: -50px; }
+.orb-2 { width: 250px; height: 250px; background: #f59e0b; bottom: -80px; left: -50px; animation-delay: 4s; }
+.orb-3 { width: 150px; height: 150px; background: #3b82f6; top: 40%; left: 20%; opacity: 0.08; animation-delay: 2s; }
+
+@keyframes floatCard {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(10px, -15px); }
+}
+
+/* CONTENT LAYOUT */
+.p-card-header {
+    position: relative; z-index: 10;
+    background: radial-gradient(circle at center, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+    padding: 25px 20px 5px 20px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.p-card-avatar-box {
+    position: relative; z-index: 10;
+    width: 180px; height: 180px;
+    margin: 25px auto;
+    border-radius: 24px;
+    padding: 3px;
+    background: linear-gradient(45deg, #10b981, #f59e0b);
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.2);
+}
+
+.p-card-avatar-img {
+    width: 100%; height: 100%;
+    border-radius: 20px;
+    background: #0f172a;
+    object-fit: cover;
+    border: 2px solid #020617;
+}
+
+.p-card-name-strip {
+    position: relative; z-index: 10;
+    background: rgba(255, 255, 255, 0.02);
+    border-y: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 10px 0;
+    text-align: center;
+    margin: 10px 0 15px 0;
+    backdrop-filter: blur(5px);
+}
+
+.p-card-achievement {
+    position: relative; z-index: 10;
+    margin: 0 25px 15px 25px;
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%);
+    border-left: 3px solid #f59e0b;
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 10px;
+}
+
+.p-card-grid {
+    position: relative; z-index: 10;
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 6px; padding: 0 25px; margin-bottom: 20px;
+}
+
+.p-card-stat {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 6px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+
+.p-card-footer {
+    position: relative; z-index: 10;
+    text-align: center; padding: 12px;
+    background: #020617;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
