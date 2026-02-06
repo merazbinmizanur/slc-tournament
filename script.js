@@ -203,22 +203,10 @@ function switchAuthTab(type) {
     }
 }
 
+// [UPDATED] registerPlayerOnline: Initializes Goals to 0
 async function registerPlayerOnline() {
-    // --- START UPDATE: CHECK LOCK STATUS ---
-    try {
-        const settingsDoc = await db.collection("settings").doc("global").get();
-        // If the document exists and registrationLocked is true, stop here.
-        if (settingsDoc.exists && settingsDoc.data().registrationLocked) {
-            return notify("REGISTRATION CLOSED: SEASON ACTIVE", "lock");
-        }
-    } catch (e) {
-        console.error("Error checking tournament lock:", e);
-    }
-    // --- END UPDATE ---
-
     const name = document.getElementById('reg-name').value.trim();
     const phone = document.getElementById('reg-phone').value.trim();
-    // NEW: Get the Avatar Link
     const avatar = document.getElementById('reg-avatar').value.trim();
 
     if (!name || !phone) return notify("Name & Phone required", "alert-circle");
@@ -230,8 +218,9 @@ async function registerPlayerOnline() {
         id: uniqueID, 
         name: name, 
         phone: phone, 
-        avatar: avatar, // SAVE TO DATABASE
+        avatar: avatar,
         bounty: STARTING_BOUNTY, 
+        goals: 0, // <--- NEW: Init Goals
         mp: 0, wins: 0, draws: 0, losses: 0, 
         p2High: 0, p2Std: 0 
     };
@@ -245,6 +234,7 @@ async function registerPlayerOnline() {
         notify("Database error", "x-circle");
     }
 }
+
 
 
 
@@ -343,41 +333,6 @@ function listenToCloud() {
     checkTournamentWinner();
 }
 
-
-
-function refreshUI() {
-    const rawID = localStorage.getItem('slc_user_id') || "";
-    const myID = rawID.toUpperCase();
-    const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
-    
-    const userBountyEl = document.getElementById('user-bounty-display');
-    if (userBountyEl) {
-        if (state.isAdmin) {
-            userBountyEl.innerText = "ADMIN MODE";
-        } else if (myPlayer) {
-            userBountyEl.innerText = `${(Number(myPlayer.bounty) || 0).toLocaleString()} BP`;
-        }
-    }
-    
-    const totalBP = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
-    const poolEl = document.getElementById('total-pool-display');
-    if (poolEl) poolEl.innerText = `POOL: ${totalBP.toLocaleString()} BP`;
-    
-    checkPhaseLocks();
-    
-    try {
-        renderLeaderboard();
-        renderShop();
-        checkVaultStatus();
-        renderSchedule();
-        renderEliteBracket();
-        renderBrokerBoard(); 
-        renderPlayerDashboard();
-        renderNewsTicker();
-    } catch (err) {
-        console.error("UI Render Error:", err);
-    }
-}
 
 // [UPDATED] checkPhaseLocks: Handles Phase 3 Countdown & Professional Text
 let p3Interval = null; // Variable to hold the timer reference
@@ -680,6 +635,7 @@ async function respondToChallenge(matchId, action) {
 }
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
+// --- 6. PRO DASHBOARD (SETTINGS TAB) ---
 function renderPlayerDashboard() {
     const container = document.getElementById('view-settings');
     if (!container) return;
@@ -692,6 +648,16 @@ function renderPlayerDashboard() {
     if (p) {
         const rank = getRankInfo(p.bounty || 0);
         
+        // --- NEW CALCULATION: GOALS CONCEDED ---
+        let goalsConceded = 0;
+        state.matches.forEach(m => {
+            if (m.status === 'played') {
+                if (m.homeId === p.id) goalsConceded += (m.score?.a || 0);
+                if (m.awayId === p.id) goalsConceded += (m.score?.h || 0);
+            }
+        });
+        // ---------------------------------------
+
         // --- AVATAR LOGIC ---
         const avatarHTML = p.avatar 
             ? `<img src="${p.avatar}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -738,7 +704,46 @@ function renderPlayerDashboard() {
                         <div class="flex justify-center gap-1.5 mt-2" id="dash-form-dots"></div>
                     </div>
                 </div>
+            </div>
+
+            <div class="moving-border p-[1px] rounded-[2.1rem] shadow-lg">
+                <div class="bg-slate-900 p-5 rounded-[2rem]">
+                    <h4 class="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] text-center mb-4 border-b border-white/5 pb-2">Season Analytics</h4>
+                    
+                    <div class="grid grid-cols-3 gap-y-5 gap-x-2">
+                        <div class="text-center">
+                            <p class="text-[7px] text-slate-500 font-bold uppercase mb-1">Played</p>
+                            <p class="text-sm font-black text-white">${p.mp || 0}</p>
+                        </div>
+                        
+                        <div class="text-center">
+                            <p class="text-[7px] text-emerald-500 font-bold uppercase mb-1">Won</p>
+                            <p class="text-sm font-black text-white">${p.wins || 0}</p>
+                        </div>
+
+                        <div class="text-center">
+                            <p class="text-[7px] text-slate-400 font-bold uppercase mb-1">Draw</p>
+                            <p class="text-sm font-black text-white">${p.draws || 0}</p>
+                        </div>
+
+                        <div class="text-center">
+                            <p class="text-[7px] text-rose-500 font-bold uppercase mb-1">Lost</p>
+                            <p class="text-sm font-black text-white">${p.losses || 0}</p>
+                        </div>
+
+                        <div class="text-center">
+                            <p class="text-[7px] text-gold-500 font-bold uppercase mb-1">Scored</p>
+                            <p class="text-sm font-black text-white">${p.goals || 0}</p>
+                        </div>
+
+                        <div class="text-center">
+                            <p class="text-[7px] text-blue-400 font-bold uppercase mb-1">Conceded</p>
+                            <p class="text-sm font-black text-white">${goalsConceded}</p>
+                        </div>
+                    </div>
+                </div>
             </div>`;
+
         const nextMatches = state.matches.filter(m =>
             m.status === 'scheduled' && (m.homeId === p.id || m.awayId === p.id)
         );
@@ -814,7 +819,11 @@ function renderPlayerDashboard() {
                 </div>
 
                 <div id="admin-players-list" class="space-y-2"></div>
-                <button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
+
+<button onclick="adminSyncGoals()" class="w-full py-4 mb-3 bg-blue-600/10 border border-blue-500/30 text-blue-500 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+    <i data-lucide="refresh-cw" class="w-3 h-3 inline mr-2"></i> Sync Goal History
+</button>
+<button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
             </div>`;
     } else {
         // --- NEW: EDIT PROFILE BUTTON (Only for Players) ---
@@ -841,7 +850,7 @@ function renderPlayerDashboard() {
     html += `
         <div class="text-center pt-6 pb-20">
             <button onclick="logout()" class="px-10 py-4 bg-rose-500/5 text-rose-500 text-[10px] font-black rounded-full border border-rose-500/20 tracking-[0.2em] shadow-xl active:scale-95 transition-all mb-16">
-                TERMINATE SESSION
+                LOGOUT
             </button>
             <div class="h-[1px] w-16 bg-gradient-to-r from-transparent via-slate-800 to-transparent mx-auto mb-6"></div>
             <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] mb-2">Developed By <span class="text-emerald-500">Meraz Bin Mizanur</span></p>
@@ -875,6 +884,7 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 
@@ -965,6 +975,8 @@ function askGeneratePhase1() {
         setTimeout(() => location.reload(), 1500);
     });
 }
+
+
 
 
 function askGeneratePhase3() {
@@ -1061,7 +1073,6 @@ function renderEliteBracket() {
 }
 
 // --- 8. MATCH RESULTS & SCORING ---
-// [UPDATED] saveMatchResult: Now supports Shop Items (Insurance & Multiplier)
 async function saveMatchResult() {
     const sH = parseInt(document.getElementById('res-s-h').value);
     const sA = parseInt(document.getElementById('res-s-a').value);
@@ -1072,19 +1083,37 @@ async function saveMatchResult() {
     const m = state.matches.find(x => x.id === state.activeMatchId);
     if (!m) return;
     
+    // Authorization Check
     const isAuthorized = state.isAdmin || (verifyId === m.homeId || verifyId === m.awayId);
     if (!isAuthorized) return notify("Unauthorized", "lock");
 
     try {
-        // --- CRITICAL CHANGE: REVERT OLD STATS IF EDITING ---
         if (m.status === 'played') {
             await revertMatchStats(m);
         }
-        // -----------------------------------------------------
 
         const batch = db.batch();
         let matchUpdate = { status: 'played' };
         let hBP = 0, aBP = 0;
+
+        // --- UPDATED: CAPTURE SUBMITTER NAME (PRIVACY SAFE) ---
+        let submitterName = "Admin";
+        
+        if (!state.isAdmin) {
+            // Find the player object that matches the Verification ID
+            const submitterObj = state.players.find(p => p.id === verifyId);
+            
+            if (submitterObj && submitterObj.name) {
+                // SUCCESS: Save their Name
+                submitterName = submitterObj.name; 
+            } else {
+                // FALLBACK: If name not found, show generic text. NEVER show ID.
+                submitterName = "Verified Player"; 
+            }
+        }
+        
+        matchUpdate.submittedBy = submitterName;
+        // ------------------------------------------------------
 
         // 1. GET PLAYERS & ACTIVE EFFECTS
         const hObj = state.players.find(p => p.id === m.homeId);
@@ -1092,15 +1121,12 @@ async function saveMatchResult() {
         const hEff = hObj?.active_effects || {};
         const aEff = aObj?.active_effects || {};
 
-        // 2. HELPER: CALCULATE POINTS WITH ITEM LOGIC
-        // applies Multiplier on Wins, Insurance on Losses
+        // 2. HELPER: CALCULATE POINTS
         const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
             if (isWinner) {
-                // Multiplier: Doubles the win points
                 if (effectObj.multiplier) return baseWin * 2;
                 return baseWin;
             } else {
-                // Insurance: Halves the loss points
                 if (effectObj.insurance) return baseLoss / 2;
                 return baseLoss;
             }
@@ -1114,16 +1140,14 @@ async function saveMatchResult() {
             matchUpdate.winnerId = sH > sA ? m.homeId : (sA > sH ? m.awayId : null);
         } 
         else if (m.phase === 2) {
-            // Phase 2: Percentage of Total Pool
             const pool = Math.floor((hObj.bounty + aObj.bounty) * (m.stakeRate / 100));
             winPts = pool; lossPts = -pool;
         } 
         else {
-            // Phase 1: Standard Scoring
             winPts = 100; lossPts = -50;
         }
 
-        // 4. CALCULATE FINAL BP (Applying Items)
+        // 4. CALCULATE FINAL BP
         if (sH > sA) { 
             hBP = calcPoints(true, winPts, lossPts, hEff);
             aBP = calcPoints(false, winPts, lossPts, aEff);
@@ -1133,18 +1157,13 @@ async function saveMatchResult() {
             aBP = calcPoints(true, winPts, lossPts, aEff);
         } 
         else { 
-            // Draws are usually not affected by items
             hBP = drawPts; aBP = drawPts; 
         }
 
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
-// NEW: Track who submitted the result
-matchUpdate.submittedBy = state.isAdmin ? "ADMIN" : verifyId;
-matchUpdate.submittedAt = Date.now();
-        
-        // 5. CONSUME ITEMS (Remove them after the match)
-        // Checks if items were active and removes them from the database
+
+        // 5. CONSUME ITEMS
         const consumeItem = (pid, effectName) => {
             batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
         };
@@ -1160,6 +1179,7 @@ matchUpdate.submittedAt = Date.now();
         // 6. UPDATE PLAYER STATS
         batch.update(db.collection("players").doc(m.homeId), {
             bounty: firebase.firestore.FieldValue.increment(hBP),
+            goals: firebase.firestore.FieldValue.increment(sH),
             wins: firebase.firestore.FieldValue.increment(sH > sA ? 1 : 0),
             draws: firebase.firestore.FieldValue.increment(sH === sA ? 1 : 0),
             losses: firebase.firestore.FieldValue.increment(sH < sA ? 1 : 0),
@@ -1167,6 +1187,7 @@ matchUpdate.submittedAt = Date.now();
         });
         batch.update(db.collection("players").doc(m.awayId), {
             bounty: firebase.firestore.FieldValue.increment(aBP),
+            goals: firebase.firestore.FieldValue.increment(sA),
             wins: firebase.firestore.FieldValue.increment(sA > sH ? 1 : 0),
             draws: firebase.firestore.FieldValue.increment(sH === sA ? 1 : 0),
             losses: firebase.firestore.FieldValue.increment(sA < sH ? 1 : 0),
@@ -1176,8 +1197,14 @@ matchUpdate.submittedAt = Date.now();
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         await batch.commit();
         
-        notify("Result Saved & Items Applied!", "check-circle");
+        notify("Result Saved!", "check-circle");
         closeModal('modal-result');
+
+        // Check Milestones (If function exists)
+        if (typeof checkAndRewardMilestones === 'function') {
+            await checkAndRewardMilestones(m.homeId);
+            await checkAndRewardMilestones(m.awayId);
+        }
         
     } catch (err) {
         console.error(err);
@@ -1188,7 +1215,6 @@ matchUpdate.submittedAt = Date.now();
 
 
 
-// [UPDATED] openResultEntry: Pre-fills scores for editing
 // [UPDATED] openResultEntry: Uses Avatar Engine for pictures
 function openResultEntry(id) {
     state.activeMatchId = id;
@@ -1232,6 +1258,59 @@ function openResultEntry(id) {
 }
 
 
+// --- NEW: GOAL MILESTONE ENGINE ---
+
+async function checkAndRewardMilestones(playerId) {
+    try {
+        const ref = db.collection("players").doc(playerId);
+        const doc = await ref.get();
+        if (!doc.exists) return;
+
+        const p = doc.data();
+        const goals = p.goals || 0;
+        // Retrieve existing claims or initialize empty object
+        const claimed = p.claimed_milestones || {}; 
+        
+        let bonusBP = 0;
+        let updates = {};
+        let milestonesReached = [];
+
+        // Milestone Configuration
+        const milestones = [
+            { target: 15, reward: 50 },
+            { target: 30, reward: 100 },
+            { target: 50, reward: 150 },
+            { target: 80, reward: 200 },
+            { target: 100, reward: 500 }
+        ];
+
+        milestones.forEach(m => {
+            // Check if goal target met AND reward not yet claimed
+            if (goals >= m.target && !claimed[m.target]) {
+                bonusBP += m.reward;
+                // Prepare Firestore update for this specific key
+                updates[`claimed_milestones.${m.target}`] = true;
+                milestonesReached.push(m.target);
+            }
+        });
+
+        // If bonuses exist, apply them
+        if (bonusBP > 0) {
+            updates['bounty'] = firebase.firestore.FieldValue.increment(bonusBP);
+            
+            await ref.update(updates);
+            
+            // Trigger Notification
+            notify(`${p.name} HIT ${milestonesReached.join(', ')} GOALS! +${bonusBP} BP`, "trophy");
+            
+            // Optional: Celebration Effect
+            if (bonusBP >= 150) triggerFireworks();
+        }
+
+    } catch (e) {
+        console.error("Milestone Error:", e);
+    }
+}
 
 
 
@@ -1464,37 +1543,40 @@ function renderSchedule() {
 
 
 
-
-// Replace the entire createMatchResultCard function with this:
+// [UPDATED] createMatchResultCard: Shows Submitters Name
+// [UPDATED] createMatchResultCard: Includes Retroactive Privacy Fix
 function createMatchResultCard(m) {
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
     
-    // 1. FIND SUBMITTER FULL NAME
-    let submitterLabel = ""; 
-    if (m.submittedBy) {
-        if (m.submittedBy === 'ADMIN') {
-            submitterLabel = "By ADMIN";
-        } else {
-            const p = state.players.find(x => x.id === m.submittedBy);
-            // CHANGED: Removed .split(' ')[0] to show FULL NAME
-            submitterLabel = p ? `By ${p.name}` : "By Unknown";
-        }
-    }
-
     const div = document.createElement('div');
     div.className = "bg-slate-900/40 p-3 rounded-2xl flex justify-between items-center border border-white/5 mb-2 w-full max-w-[340px] mx-auto opacity-70 relative group";
     
+    // --- SMART SUBMITTER NAME RESOLVER ---
+    let submitterDisplay = "";
+    
+    if (m.submittedBy) {
+        // 1. Check if the stored text is actually a known Player ID (Retroactive Fix)
+        const submitterObj = state.players.find(p => p.id === m.submittedBy);
+        
+        if (submitterObj) {
+            // It was an ID! Swap it for the Name immediately
+            submitterDisplay = `Ver: ${submitterObj.name}`;
+        } else {
+            // It's already a Name (or "Admin"), use it as is
+            submitterDisplay = `Ver: ${m.submittedBy}`;
+        }
+    }
+    // -------------------------------------
+
     div.innerHTML = `
         <span class="text-[9px] font-bold text-white truncate w-20">${h?.name || "TBD"}</span>
-        
-        <div class="flex flex-col items-center justify-center w-20">
+        <div class="flex flex-col items-center justify-center min-w-[60px]">
             <span class="text-xs font-black text-emerald-400 leading-none">${m.score ? m.score.h : '0'}-${m.score ? m.score.a : '0'}</span>
             <span class="text-[6px] text-slate-600 font-bold uppercase mt-1">PH-${m.phase}</span>
             
-            ${submitterLabel ? `<span class="text-[5px] text-gold-500 font-black uppercase tracking-wider mt-0.5 truncate max-w-[70px] block">${submitterLabel}</span>` : ''}
+            ${submitterDisplay ? `<span class="text-[5px] text-slate-500 font-bold uppercase mt-0.5 tracking-tight max-w-[80px] truncate">${submitterDisplay}</span>` : ''}
         </div>
-
         <span class="text-[9px] font-bold text-white truncate w-20 text-right">${a?.name || "TBD"}</span>
     `;
 
@@ -1510,6 +1592,8 @@ function createMatchResultCard(m) {
 
     return div;
 }
+
+
 
 // Function to open the separate "page"
 function openFullHistory() {
@@ -1642,20 +1726,34 @@ function injectTickerContent(container, rawHtml) {
 
 // --- 10. ADMIN COMMANDS ---
 
+// [UPDATED] bulkAddPlayers: Added Null Safety
 async function bulkAddPlayers() {
     const area = document.getElementById('bulk-names');
+    if (!area) return; // Prevent crash if element missing
+
     const lines = area.value.split('\n');
     const batch = db.batch();
+    
     for (const name of lines) {
         const clean = name.replace('@', '').trim();
         if (clean) {
             const uid = `S${Math.floor(Math.random()*90+10)}L${Math.floor(Math.random()*90+10)}C${Math.floor(Math.random()*90+10)}`;
-            batch.set(db.collection("players").doc(uid), { id: uid, name: clean, bounty: 500, mp: 0, wins: 0, draws: 0, losses: 0, p2High: 0, p2Std: 0 });
+            batch.set(db.collection("players").doc(uid), { 
+                id: uid, 
+                name: clean, 
+                bounty: 500, 
+                goals: 0, 
+                mp: 0, wins: 0, draws: 0, losses: 0, 
+                p2High: 0, p2Std: 0 
+            });
         }
     }
     await batch.commit();
-    area.value = ''; notify("Bulk Recruited!", "users");
+    area.value = ''; 
+    notify("Bulk Recruited!", "users");
 }
+
+
 
 // --- REPLACE ENTIRE renderAdminList FUNCTION ---
 function renderAdminList() {
@@ -1721,21 +1819,6 @@ function openModal(id) { document.getElementById(id).classList.remove('hidden');
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function logout() { localStorage.clear(); location.reload(); }
 
-function checkTournamentWinner() {
-    db.collection("settings").doc("global").onSnapshot(doc => {
-        if (doc.exists && doc.data().tournamentStatus === 'finished') {
-            const champName = doc.data().championName;
-            const overlay = document.getElementById('champion-overlay');
-            const nameEl = document.getElementById('champion-name');
-            if (overlay && overlay.classList.contains('hidden')) {
-                nameEl.innerText = champName;
-                overlay.classList.remove('hidden');
-                triggerFireworks();
-            }
-        }
-    });
-}
-
 function triggerFireworks() {
     const duration = 15 * 1000;
     const animationEnd = Date.now() + duration;
@@ -1785,7 +1868,7 @@ async function clearPhase3Lock() {
 }
 
 
-// [NEW] revertMatchStats: Reverses points so we can edit cleanly
+// [UPDATED] revertMatchStats: Reverses points AND goals
 async function revertMatchStats(m) {
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
@@ -1795,7 +1878,6 @@ async function revertMatchStats(m) {
     
     // Calculate what needs to be subtracted
     if (m.resultDelta) {
-        // Use exact saved delta if available
         hBP = -m.resultDelta.h;
         aBP = -m.resultDelta.a;
     } else {
@@ -1820,24 +1902,30 @@ async function revertMatchStats(m) {
     }
 
     const batch = db.batch();
-    // Reverse Home
+    
+    // Reverse Home (Subtract goals using negative increment)
     batch.update(db.collection("players").doc(h.id), {
         bounty: firebase.firestore.FieldValue.increment(hBP),
+        goals: firebase.firestore.FieldValue.increment(-m.score.h), // <--- NEW: Remove Goals
         mp: firebase.firestore.FieldValue.increment(-1),
         wins: firebase.firestore.FieldValue.increment(m.score.h > m.score.a ? -1 : 0),
         draws: firebase.firestore.FieldValue.increment(m.score.h === m.score.a ? -1 : 0),
         losses: firebase.firestore.FieldValue.increment(m.score.h < m.score.a ? -1 : 0)
     });
-    // Reverse Away
+
+    // Reverse Away (Subtract goals using negative increment)
     batch.update(db.collection("players").doc(a.id), {
         bounty: firebase.firestore.FieldValue.increment(aBP),
+        goals: firebase.firestore.FieldValue.increment(-m.score.a), // <--- NEW: Remove Goals
         mp: firebase.firestore.FieldValue.increment(-1),
         wins: firebase.firestore.FieldValue.increment(m.score.a > m.score.h ? -1 : 0),
         draws: firebase.firestore.FieldValue.increment(m.score.a === m.score.h ? -1 : 0),
         losses: firebase.firestore.FieldValue.increment(m.score.a < m.score.h ? -1 : 0)
     });
+    
     await batch.commit();
 }
+
 
 // [NEW] askDeleteResult: Admin command to delete a result
 async function askDeleteResult(mid) {
@@ -1942,6 +2030,9 @@ Your verification ID is ${recipient.id}.
 }
 
 
+
+// --- NEW: PROFILE EDITING LOGIC ---
+
 // [REPLACEMENT] openEditProfile: Pre-fills Name, Phone, and Avatar
 function openEditProfile() {
     const rawID = localStorage.getItem('slc_user_id');
@@ -1989,7 +2080,6 @@ async function saveProfileChanges() {
         notify("Update Failed", "x-circle");
     }
 }
-
 
 // --- BOUNTY SHOP ENGINE ---
 
@@ -2252,11 +2342,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // 1. GENERATE THE PREVIEW
+// [CORRECTED] showStandingsPreview: Fixed CSS typo 'h: 2px' to 'height: 2px'
 function showStandingsPreview() {
-  const previewArea = document.getElementById('preview-content-area');
-  const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
-  
-  let tableRows = sortedPlayers.map((p, i) => `
+    const previewArea = document.getElementById('preview-content-area');
+    // Safety check to prevent crash if modal is missing
+    if (!previewArea) return;
+
+    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    
+    let tableRows = sortedPlayers.map((p, i) => `
         <tr>
             <td class="export-rank">#${i + 1}</td>
             <td style="color:white; text-transform:uppercase; font-size:11px;">${p.name}</td>
@@ -2267,13 +2361,13 @@ function showStandingsPreview() {
             <td class="export-bp">${(p.bounty || 0).toLocaleString()}</td>
         </tr>
     `).join('');
-  
-  previewArea.innerHTML = `
+    
+    previewArea.innerHTML = `
         <div class="export-card" id="capture-zone">
             <div class="export-header">
                 <p style="color: #10b981; font-size: 8px; font-weight: 900; letter-spacing: 5px; margin-bottom: 5px;">SYNTHEX LEGION CHRONICLES</p>
                 <h1 style="color: white; font-size: 18px; font-weight: 900; margin: 0; letter-spacing: -0.5px;">BOUNTY STANDINGS</h1>
-                <div style="width: 40px; h: 2px; background: #f59e0b; margin: 10px auto;"></div>
+                <div style="width: 40px; height: 2px; background: #f59e0b; margin: 10px auto;"></div>
                 <p style="color: #475569; font-size: 7px; text-transform: uppercase;">Generated: ${new Date().toLocaleDateString()} | System Stable</p>
             </div>
             <table class="export-table">
@@ -2297,11 +2391,13 @@ function showStandingsPreview() {
             </div>
         </div>
     `;
-  
-  openModal('modal-download-preview');
-  if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    openModal('modal-download-preview');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+
+// 2. EXECUTE THE ACTUAL DOWNLOAD
 // [UPDATED] executeDownload: Mobile-Safe Rendering & Detailed Error Logging
 async function executeDownload() {
     const sourceElement = document.getElementById('capture-zone');
@@ -2372,25 +2468,26 @@ async function executeDownload() {
         notify(`Failed: ${err.message || "Unknown Error"}`, "x-circle");
     }
 }
-// --- NEW FEATURE: SCHEDULE EXPORT GENERATOR ---
+
+// --- NEW: SCHEDULE GENERATOR ---
 function showSchedulePreview() {
-    // 1. Find matches that have BOTH a Date and a Deadline set
+    // 1. Filter: Scheduled matches that have BOTH Date and Deadline
     const validMatches = state.matches
         .filter(m => m.status === 'scheduled' && m.scheduledDate && m.deadline)
         .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.deadline.localeCompare(b.deadline));
 
-    if (validMatches.length === 0) return notify("Set Dates & Deadlines first!", "alert-circle");
+    if (validMatches.length === 0) return notify("No matches with Deadlines found!", "alert-circle");
 
-    // 2. Generate Header Text
+    // 2. Determine Header Date (Single date or 'Upcoming')
     const uniqueDates = [...new Set(validMatches.map(m => m.scheduledDate))];
     const headerDate = uniqueDates.length === 1 ? uniqueDates[0] : "UPCOMING FIXTURES";
 
-    // 3. Create Rows HTML
+    // 3. Build Match Rows
     const rows = validMatches.map(m => {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         
-        // Extract Time from Deadline (e.g., "2024-02-10T23:00" -> "23:00")
+        // Format Time
         const deadlineTime = m.deadline.split('T')[1] || "23:59";
         
         return `
@@ -2413,7 +2510,7 @@ function showSchedulePreview() {
         </div>`;
     }).join('');
 
-    // 4. Build the Full Export Card
+    // 4. Construct Final HTML
     const html = `
     <div class="export-card" id="capture-zone">
         <div class="export-header">
@@ -2430,17 +2527,383 @@ function showSchedulePreview() {
         <div style="margin-top: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
              <p style="color: #64748b; font-size: 7px; text-transform: uppercase; font-weight: bold; margin-bottom:5px;">OFFICIAL TOURNAMENT MATCHDAY SCHEDULE</p>
              <p style="color: #94a3b8; font-size: 7px; max-width: 90%; margin: 0 auto; line-height: 1.5;">
-                Fixtures must be completed by the <b style="color: #f59e0b;">BOLD DEADLINE</b> shown above. 
-                <br>Results not reported by the deadline may be subject to Admin Adjudication.
+                Players must complete fixtures by the <b style="color: #f59e0b;">BOLD TIME</b> shown above. 
+                <br>Failure to report results by the deadline may result in penalties.
              </p>
         </div>
     </div>`;
 
-    // 5. Render to Modal
+    // 5. Inject & Open
     const previewArea = document.getElementById('preview-content-area');
     if(previewArea) {
         previewArea.innerHTML = html;
         openModal('modal-download-preview');
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
+}
+// --- NEW FEATURE: HOME RANKING SWITCHER ---
+
+function switchHomeRank(type) {
+    const btnBounty = document.getElementById('tab-rank-bounty');
+    const btnGoals = document.getElementById('tab-rank-goals');
+    const viewBounty = document.getElementById('leaderboard-container');
+    const viewGoals = document.getElementById('scorers-container');
+
+    if (type === 'bounty') {
+        viewBounty.classList.remove('hidden');
+        viewGoals.classList.add('hidden');
+        
+        btnBounty.className = "flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-emerald-600 text-white shadow-lg";
+        btnGoals.className = "flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all text-slate-500 hover:text-white";
+    } else {
+        viewBounty.classList.add('hidden');
+        viewGoals.classList.remove('hidden');
+        
+        btnGoals.className = "flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-gold-500 text-white shadow-lg";
+        btnBounty.className = "flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all text-slate-500 hover:text-white";
+        
+        renderTopScorers(); // Trigger render
+    }
+}
+
+
+// [UPDATED] ADMIN TOOL: Recalculates goal counts AND checks milestones
+async function adminSyncGoals() {
+    askConfirm("Recalculate ALL goals & Check Milestones?", async () => {
+        try {
+            notify("Analyzing Match History...", "activity");
+            
+            const pSnap = await db.collection("players").get();
+            const mSnap = await db.collection("matches").where('status', '==', 'played').get();
+            
+            // 1. Reset everyone to 0 in memory
+            let goalMap = {}; 
+            pSnap.forEach(doc => { goalMap[doc.id] = 0; });
+
+            // 2. Tally up goals from match history
+            mSnap.forEach(doc => {
+                const m = doc.data();
+                if (m.score) {
+                    if (goalMap[m.homeId] !== undefined) goalMap[m.homeId] += (parseInt(m.score.h) || 0);
+                    if (goalMap[m.awayId] !== undefined) goalMap[m.awayId] += (parseInt(m.score.a) || 0);
+                }
+            });
+
+            // 3. Save correct goal counts
+            const batch = db.batch();
+            Object.keys(goalMap).forEach(pid => {
+                const ref = db.collection("players").doc(pid);
+                batch.update(ref, { goals: goalMap[pid] });
+            });
+
+            await batch.commit();
+            
+            // --- NEW: RETROACTIVE MILESTONE CHECK ---
+            // Now that goals are correct, check if anyone earned a milestone
+            notify("Verifying Milestones...", "star");
+            for (const pid of Object.keys(goalMap)) {
+                await checkAndRewardMilestones(pid);
+            }
+            // ------------------------------------------
+
+            notify("Goals & Milestones Synced!", "check-circle");
+            setTimeout(() => location.reload(), 2000);
+
+        } catch (e) {
+            console.error(e);
+            notify("Sync Failed", "x-circle");
+        }
+    });
+}
+
+
+
+// --- NEW: HOME VIEW SECTION MANAGEMENT ---
+
+function openShopSection() {
+    document.getElementById('shop-box').classList.add('hidden');
+    document.getElementById('scorers-box').classList.add('hidden');
+    document.getElementById('shop-section').classList.remove('hidden');
+    document.getElementById('top5-leaderboard-container').classList.add('hidden');
+    document.getElementById('full-leaderboard-container').classList.add('hidden');
+    document.querySelector('button[onclick="showStandingsPreview()"]').classList.add('hidden');
+    
+    // Force re-render of shop items
+    renderShop();
+}
+
+function openTopScorersSection() {
+    document.getElementById('shop-box').classList.add('hidden');
+    document.getElementById('scorers-box').classList.add('hidden');
+    document.getElementById('scorers-full-section').classList.remove('hidden');
+    document.getElementById('top5-leaderboard-container').classList.add('hidden');
+    document.getElementById('full-leaderboard-container').classList.add('hidden');
+    document.querySelector('button[onclick="showStandingsPreview()"]').classList.add('hidden');
+    
+    // Render top scorers
+    renderTopScorers();
+}
+
+function closeAllSections() {
+    document.getElementById('shop-box').classList.remove('hidden');
+    document.getElementById('scorers-box').classList.remove('hidden');
+    document.getElementById('shop-section').classList.add('hidden');
+    document.getElementById('scorers-full-section').classList.add('hidden');
+    document.getElementById('top5-leaderboard-container').classList.remove('hidden');
+    document.querySelector('button[onclick="showStandingsPreview()"]').classList.remove('hidden');
+    
+    // Make sure full leaderboard is hidden
+    document.getElementById('full-leaderboard-container').classList.add('hidden');
+}
+
+function toggleLeaderboardView() {
+    const top5Container = document.getElementById('top5-leaderboard-container');
+    const fullContainer = document.getElementById('full-leaderboard-container');
+    
+    if (fullContainer.classList.contains('hidden')) {
+        // Show full leaderboard
+        top5Container.classList.add('hidden');
+        fullContainer.classList.remove('hidden');
+        renderFullLeaderboard();
+    } else {
+        // Show top 5 only
+        fullContainer.classList.add('hidden');
+        top5Container.classList.remove('hidden');
+        renderTop5Leaderboard();
+    }
+}
+
+function renderTop5Leaderboard() {
+    const container = document.getElementById('top5-leaderboard-list');
+    if (!container) return;
+    
+    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty).slice(0, 5);
+    
+    container.innerHTML = '';
+    
+    sortedPlayers.forEach((p, i) => {
+        const rank = getRankInfo(p.bounty);
+        const isTop3 = i < 3;
+        
+        let medal = '';
+        if (i === 0) medal = '🥇';
+        if (i === 1) medal = '🥈';
+        if (i === 2) medal = '🥉';
+        
+        container.innerHTML += `
+            <div class="moving-border ${isTop3 ? 'moving-border-gold' : ''} p-[1px] rounded-[1.4rem]">
+                <div class="bg-slate-900 p-3 rounded-[1.3rem] flex items-center relative z-10">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="relative">
+                            ${getAvatarUI(p, "w-10", "h-10")}
+                            <div class="absolute -bottom-1 -right-1 w-5 h-5 bg-slate-950 rounded-full border border-white/5 flex items-center justify-center">
+                                <span class="text-[7px] font-black ${isTop3 ? 'text-gold-500' : 'text-slate-500'}">#${i+1}</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1 mb-1">
+                                <h3 class="text-[11px] font-black text-white truncate">${p.name}</h3>
+                                ${medal ? `<span class="text-xs">${medal}</span>` : ''}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[7px] ${rank.color} font-black uppercase">${rank.name}</span>
+                                <span class="text-[7px] text-slate-500">•</span>
+                                <span class="text-[7px] text-slate-500 font-bold">${p.mp || 0}M ${p.wins || 0}W ${p.draws || 0}D ${p.losses || 0}L</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right ml-2">
+                        <p class="text-sm font-black text-emerald-400">${p.bounty.toLocaleString()}</p>
+                        <p class="text-[7px] text-slate-500 uppercase font-bold">BP</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+}
+
+function renderFullLeaderboard() {
+    const container = document.getElementById('full-leaderboard-list');
+    if (!container) return;
+    
+    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    
+    container.innerHTML = '';
+    
+    sortedPlayers.forEach((p, i) => {
+        const rank = getRankInfo(p.bounty);
+        const isTop3 = i < 3;
+        
+        container.innerHTML += `
+            <div class="moving-border ${isTop3 ? 'moving-border-gold' : 'moving-border-blue'} p-[1px] rounded-[1.2rem]">
+                <div class="bg-slate-900 p-3 rounded-[1.1rem] flex items-center relative z-10">
+                    <span class="text-[10px] font-black w-6 text-center ${isTop3 ? 'text-gold-500' : 'text-slate-600'}">#${i+1}</span>
+                    
+                    <div class="mx-2">${getAvatarUI(p, "w-8", "h-8")}</div>
+                    
+                    <div class="flex-1 overflow-hidden">
+                        <span class="font-bold text-xs text-white uppercase truncate block">${p.name}</span>
+                        <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}
+                        </p>
+                    </div>
+                    <span class="font-black text-emerald-400 text-xs ml-2">${p.bounty.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+    });
+}
+
+// Update the renderTopScorers function to work with the new section:
+
+function renderTopScorers() {
+    const list = document.getElementById('top-scorers-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const scorers = [...state.players]
+        .filter(p => (p.goals || 0) > 0)
+        .sort((a, b) => (b.goals || 0) - (a.goals || 0) || (a.mp || 0) - (b.mp || 0));
+
+    if (scorers.length === 0) {
+        list.innerHTML = `
+            <div class="text-center py-8">
+                <i data-lucide="target" class="w-12 h-12 text-slate-700 mx-auto mb-3"></i>
+                <p class="text-[8px] text-slate-600 font-black uppercase italic">No Goals Recorded Yet</p>
+                <p class="text-[7px] text-slate-700 mt-1">Score your first goal to enter the race!</p>
+            </div>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        return;
+    }
+
+    scorers.forEach((p, index) => {
+        const victimStats = {};
+        let maxGoals = 0;
+        let favoriteVictimName = "None";
+
+        state.matches.forEach(m => {
+            if (m.status === 'played') {
+                let goalsScored = 0;
+                let opponentId = null;
+
+                if (m.homeId === p.id) { goalsScored = m.score.h; opponentId = m.awayId; }
+                if (m.awayId === p.id) { goalsScored = m.score.a; opponentId = m.homeId; }
+
+                if (goalsScored > 0 && opponentId) {
+                    victimStats[opponentId] = (victimStats[opponentId] || 0) + goalsScored;
+                    if (victimStats[opponentId] > maxGoals) {
+                        maxGoals = victimStats[opponentId];
+                        const victimObj = state.players.find(v => v.id === opponentId);
+                        favoriteVictimName = victimObj ? victimObj.name.split(' ')[0] : "Unknown";
+                    }
+                }
+            }
+        });
+
+        let rankColor = "text-slate-500"; 
+        let borderClass = "moving-border-blue";
+        let badgeClass = "bg-slate-500/10 text-slate-500";
+
+        if (index === 0) { 
+            rankColor = "text-gold-500"; 
+            borderClass = "moving-border-gold";
+            badgeClass = "bg-gold-500/10 text-gold-500";
+        }
+        if (index === 1) { 
+            rankColor = "text-slate-300"; 
+            badgeClass = "bg-slate-400/10 text-slate-400";
+        }
+        if (index === 2) { 
+            rankColor = "text-rose-400"; 
+            badgeClass = "bg-rose-500/10 text-rose-500";
+        }
+
+        list.innerHTML += `
+            <div class="${borderClass} p-[1px] rounded-[1.4rem]">
+                <div class="bg-slate-900 p-4 rounded-[1.3rem] flex items-center justify-between relative z-10">
+                    <div class="flex items-center gap-3">
+                        <div class="relative">
+                            ${getAvatarUI(p, "w-10", "h-10")}
+                            <div class="absolute -top-1 -right-1 w-5 h-5 bg-slate-950 rounded-full border border-white/5 flex items-center justify-center">
+                                <span class="text-[8px] font-black ${rankColor}">#${index + 1}</span>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-xs font-black text-white uppercase tracking-wide">${p.name}</h3>
+                            <p class="text-[7px] text-slate-500 font-bold uppercase mt-0.5">
+                                favorite Opponent: <span class="text-rose-500">${favoriteVictimName}</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="${badgeClass} px-3 py-2 rounded-xl border ${borderClass.includes('gold') ? 'border-gold-500/20' : 'border-white/5'}">
+                            <span class="block text-xl font-black ${rankColor} leading-none">${p.goals || 0}</span>
+                            <span class="text-[6px] text-slate-600 font-black uppercase tracking-widest">GOALS</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+    });
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// Update the refreshUI function to include the new leaderboard rendering:
+// [CORRECTED] refreshUI: Ends properly before the next function starts
+function refreshUI() {
+    const rawID = localStorage.getItem('slc_user_id') || "";
+    const myID = rawID.toUpperCase();
+    const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
+    
+    const userBountyEl = document.getElementById('user-bounty-display');
+    if (userBountyEl) {
+        if (state.isAdmin) {
+            userBountyEl.innerText = "ADMIN MODE";
+        } else if (myPlayer) {
+            userBountyEl.innerText = `${(Number(myPlayer.bounty) || 0).toLocaleString()} BP`;
+        }
+    }
+    
+    const totalBP = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
+    const poolEl = document.getElementById('total-pool-display');
+    if (poolEl) poolEl.innerText = `POOL: ${totalBP.toLocaleString()} BP`;
+    
+    checkPhaseLocks();
+
+    try {
+        renderTop5Leaderboard();
+        
+        if (document.getElementById('shop-section') && !document.getElementById('shop-section').classList.contains('hidden')) {
+            renderShop();
+        }
+        
+        if (document.getElementById('scorers-full-section') && !document.getElementById('scorers-full-section').classList.contains('hidden')) {
+            renderTopScorers();
+        }
+        
+        checkVaultStatus();
+        renderSchedule();
+        renderEliteBracket();
+        renderBrokerBoard(); 
+        renderPlayerDashboard();
+        renderNewsTicker();
+    } catch (err) {
+        console.error("UI Render Error:", err);
+    }
+} // <--- refreshUI ENDS HERE
+
+// [MOVED] checkTournamentWinner: Now completely outside and global
+function checkTournamentWinner() {
+    db.collection("settings").doc("global").onSnapshot(doc => {
+        if (doc.exists && doc.data().tournamentStatus === 'finished') {
+            const champName = doc.data().championName;
+            const overlay = document.getElementById('champion-overlay');
+            const nameEl = document.getElementById('champion-name');
+            if (overlay && overlay.classList.contains('hidden')) {
+                nameEl.innerText = champName;
+                overlay.classList.remove('hidden');
+                triggerFireworks();
+            }
+        }
+    });
 }
