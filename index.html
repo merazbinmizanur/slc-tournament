@@ -1063,6 +1063,41 @@
     </div>
 </div>
 
+<div id="modal-bp-history" class="fixed inset-0 z-[980] bg-slate-950/90 hidden flex items-center justify-center p-6 backdrop-blur-md">
+    <div class="moving-border-gold rounded-[2.5rem] p-[1.5px] w-full max-w-sm animate-pop-in">
+        <div class="bg-slate-900 rounded-[2.4rem] p-6 h-[80vh] flex flex-col border border-white/5 relative">
+            
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-white font-black text-sm uppercase tracking-widest italic">
+                    <span class="text-gold-500">BP</span> Ledger
+                </h3>
+                <button onclick="document.getElementById('modal-bp-history').classList.add('hidden')" class="p-2 bg-white/5 rounded-full hover:bg-white/10 text-slate-400 transition-all">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="bg-slate-950/50 rounded-2xl p-4 mb-4 border border-white/5 text-center">
+                <p class="text-[7px] text-slate-500 font-black uppercase tracking-widest mb-1">Net Worth Flow</p>
+                <div class="flex justify-center gap-4">
+                    <div class="text-center">
+                        <span class="block text-[7px] text-emerald-500 font-bold uppercase">Earned</span>
+                        <span id="hist-total-in" class="text-xs font-black text-white">0</span>
+                    </div>
+                    <div class="w-[1px] bg-white/10"></div>
+                    <div class="text-center">
+                        <span class="block text-[7px] text-rose-500 font-bold uppercase">Spent</span>
+                        <span id="hist-total-out" class="text-xs font-black text-white">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="bp-history-list" class="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1">
+                </div>
+
+        </div>
+    </div>
+</div>
+
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
