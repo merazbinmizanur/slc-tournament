@@ -2585,57 +2585,60 @@ function showPersonalCardPreview() {
 
 
 
-// 2. EXECUTE THE ACTUAL DOWNLOAD
-// [UPDATED] executeDownload: Mobile-Safe Rendering & Detailed Error Logging
+// --- DOWNLOAD ENGINE (Fixed for Exact Fit) ---
 async function executeDownload() {
     const sourceElement = document.getElementById('capture-zone');
     const exportContainer = document.getElementById('export-container');
 
-    // 1. Critical System Checks
     if (!sourceElement) return notify("Error: Preview Content Missing", "alert-circle");
     if (!exportContainer) return notify("System Error: Export Container Missing", "alert-circle");
     
     notify("Generating Image...", "download");
 
     try {
-        // 2. Prepare the Container
+        // 1. Prepare Export Container
         exportContainer.innerHTML = ''; 
         
-        // 3. Clone and Setup
+        // 2. Clone the Element
         const clone = sourceElement.cloneNode(true);
         
-        // Force styles to ensure it looks right even when invisible
+        // 3. Force Exact Styling on Clone to remove external spacing
         clone.style.margin = "0";
-        clone.style.width = "100%"; 
-        clone.style.height = "auto";
-        clone.style.borderRadius = "0"; 
+        clone.style.transform = "none"; 
+        clone.style.position = "relative";
+        clone.style.left = "auto";
+        clone.style.top = "auto";
         clone.style.boxShadow = "none";
-        clone.style.background = "#020617"; // Ensure background isn't transparent
         
+        // Add to hidden container
         exportContainer.appendChild(clone);
         
-        // 4. Mobile Render Delay
-        // Wait 350ms to ensure the hidden DOM is fully painted by the mobile browser
+        // 4. Wait for DOM to paint
         await new Promise(resolve => setTimeout(resolve, 350));
 
-        // 5. Capture
+        // 5. Capture with EXACT Dimensions
+        // We measure the clone, not the original, to get the true render size
+        const width = clone.offsetWidth;
+        const height = clone.offsetHeight;
+
         const canvas = await html2canvas(clone, {
-            useCORS: true,        // Critical for loading profile images
-            allowTaint: false,    // Security flag
-            backgroundColor: "#020617", 
-            scale: 2,             // 2x Quality
-            width: 600,           // Lock width to container
-            height: clone.scrollHeight + 20, // Add slight buffer to height
-            logging: true,        // Enable logs for debugging
-            windowWidth: 1200     // Trick CSS into thinking it's desktop
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: "#020617", // Force dark background
+            scale: 2, // High Quality
+            width: width, // Exact width match
+            height: height, // Exact height match
+            scrollX: 0,
+            scrollY: 0,
+            logging: false
         });
 
-        // 6. Save
+        // 6. Save File
         const image = canvas.toDataURL("image/png", 0.9);
         const link = document.createElement('a');
         
         const timestamp = new Date().toLocaleTimeString().replace(/:/g, "-");
-        link.download = `SLC-Standings-${timestamp}.png`;
+        link.download = `SLC-Card-${timestamp}.png`;
         link.href = image;
         link.style.display = 'none';
         
@@ -2652,7 +2655,6 @@ async function executeDownload() {
 
     } catch (err) {
         console.error("Download Error:", err);
-        // This will now show the REAL error message on your screen
         notify(`Failed: ${err.message || "Unknown Error"}`, "x-circle");
     }
 }
