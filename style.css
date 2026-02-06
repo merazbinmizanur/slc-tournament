@@ -656,3 +656,74 @@ button[onclick="showStandingsPreview()"] {
     background: #020617;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
+
+/* --- LIVE FLAME STREAK EFFECTS --- */
+
+/* 1. Flame Moving Border (For Leaderboard Cards) */
+.moving-border-flame {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); /* Orange Glow */
+}
+
+.moving-border-flame::before {
+    content: ''; 
+    position: absolute; 
+    z-index: -2; 
+    left: -50%; 
+    top: -50%; 
+    width: 200%; 
+    height: 200%; 
+    /* Fire Colors: Red -> Orange -> Yellow -> Transparent */
+    background: conic-gradient(transparent, #ef4444, #f97316, #f59e0b, transparent 30%); 
+    animation: rotate 3s linear infinite; /* Faster rotation for intensity */
+}
+
+.moving-border-flame::after {
+    content: ''; 
+    position: absolute; 
+    z-index: -1; 
+    inset: 1.5px; 
+    background: var(--slate-900); 
+    border-radius: inherit;
+}
+
+/* 2. Avatar Live Flame (Pulsing Fire Ring) */
+.avatar-flame-wrapper {
+    position: relative;
+    border-radius: 50%;
+    padding: 2px;
+    background: linear-gradient(to bottom, #f59e0b, #ef4444);
+    box-shadow: 0 0 10px #f59e0b, 0 0 20px #ef4444;
+    animation: flamePulse 1.5s infinite alternate;
+}
+
+@keyframes flamePulse {
+    0% { box-shadow: 0 0 8px #f59e0b, 0 0 15px #ef4444; filter: brightness(1); }
+    100% { box-shadow: 0 0 15px #f59e0b, 0 0 30px #ef4444; filter: brightness(1.3); }
+}
+
+/* Add a tiny fire icon badge overlay */
+.streak-fire-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 14px;
+    height: 14px;
+    background: #0f172a;
+    border: 1px solid #f59e0b;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f59e0b;
+    font-size: 8px;
+    z-index: 20;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+}
