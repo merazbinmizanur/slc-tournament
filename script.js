@@ -2783,44 +2783,47 @@ function showSchedulePreview(page = 1) {
     const uniqueDates = [...new Set(displayMatches.map(m => m.scheduledDate))];
     const headerDate = uniqueDates.length === 1 ? uniqueDates[0] : "UPCOMING FIXTURES";
 
-    // 4. Build Match Rows
+// 4. Build Match Rows (UPDATED LAYOUT)
     const rows = displayMatches.map(m => {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         
-        // --- FIX: BD Time (GMT+6) & AM/PM ---
+        // Time Formatting (Kept same)
         const dateObj = new Date(m.deadline);
         const bdTime = dateObj.toLocaleTimeString('en-US', {
-            timeZone: 'Asia/Dhaka', // Forces GMT+6
+            timeZone: 'Asia/Dhaka',
             hour: 'numeric',
             minute: '2-digit',
             hour12: true
         });
 
-        // --- FIX: Add Phase & Round ---
         const roundInfo = `PHASE ${m.phase} • R-${m.round || 1}`;
         
         return `
         <div class="schedule-export-row">
-            <div class="schedule-players">
-                <div class="schedule-p">
+            <div class="schedule-players" style="display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;">
+                
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-end;">
                     ${getAvatarUI(h, "w-10", "h-10")}
-                    <span style="font-size: 6px;">${h?.name || "TBD"}</span>
-
+                    <span style="font-size: 9px; font-weight: 800; color: #e2e8f0; text-transform: uppercase; text-align: right;">${h?.name || "TBD"}</span>
                 </div>
-                <div class="schedule-vs">VS</div>
-                <div class="schedule-p">
+
+                <div class="schedule-vs" style="margin: 0 5px;">VS</div>
+
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-start;">
+                    <span style="font-size: 9px; font-weight: 800; color: #e2e8f0; text-transform: uppercase; text-align: left;">${a?.name || "TBD"}</span>
                     ${getAvatarUI(a, "w-10", "h-10")}
-                    <span style="font-size: 6px;">${a?.name || "TBD"}</span>
-
                 </div>
+
             </div>
+
             <div class="schedule-info">
                 <span class="schedule-badge" style="color:#64748b; font-size: 7px; margin-bottom: 2px;">${roundInfo}</span>
                 <span class="schedule-badge" style="color:#10b981;">Deadline: <b class="schedule-highlight">${bdTime}</b></span>
             </div>
         </div>`;
     }).join('');
+
 
     // 5. Construct Final HTML (The Image Card)
     // Note: We add specific page number info to the footer
