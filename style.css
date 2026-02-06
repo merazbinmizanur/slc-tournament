@@ -727,3 +727,23 @@ button[onclick="showStandingsPreview()"] {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-2px); }
 }
+/* --- ALERT MODAL ANIMATIONS --- */
+
+/* Bell/Siren Wiggle Animation */
+@keyframes wiggle {
+    0%, 100% { transform: rotate(-3deg); }
+    50% { transform: rotate(3deg); }
+}
+.animate-wiggle {
+    animation: wiggle 0.5s ease-in-out infinite;
+}
+
+/* Cyber Grid Pattern for Modal Background */
+.modal-cyber-grid {
+    background-image: 
+        linear-gradient(rgba(245, 158, 11, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245, 158, 11, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+    mask-image: radial-gradient(circle, black 40%, transparent 80%);
+    -webkit-mask-image: radial-gradient(circle, black 40%, transparent 80%);
+}
