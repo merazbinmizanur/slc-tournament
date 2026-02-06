@@ -747,3 +747,32 @@ button[onclick="showStandingsPreview()"] {
     mask-image: radial-gradient(circle, black 40%, transparent 80%);
     -webkit-mask-image: radial-gradient(circle, black 40%, transparent 80%);
 }
+
+/* --- OVERTIME SANCTION STYLING --- */
+.moving-border-rose {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.2);
+}
+
+.moving-border-rose::before {
+    content: '';
+    position: absolute;
+    z-index: -2;
+    left: -50%;
+    top: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(transparent, #f43f5e, #881337, transparent 40%);
+    animation: rotate 4s linear infinite;
+}
+
+.moving-border-rose::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 1.5px;
+    background: #1a0508;
+    /* Dark Red tint background */
+    border-radius: inherit;
+}
