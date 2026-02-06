@@ -102,25 +102,67 @@ let confirmCallback = null;
  * Avatar Generator Engine
  * Returns HTML for Image if available, otherwise Initials
  */
+ // --- NEW HELPER: CALCULATE WIN STREAK ---
+function calculateWinStreak(playerId) {
+    // 1. Get all played matches for this player
+    const played = state.matches.filter(m => 
+        m.status === 'played' && (m.homeId === playerId || m.awayId === playerId)
+    );
+
+    // 2. Sort by ID descending (assuming ID implies time) or use a Date field if available
+    // We use ID string comparison for now as per your existing logic
+    played.sort((a, b) => b.id.localeCompare(a.id));
+
+    let streak = 0;
+    
+    // 3. Count backwards from most recent
+    for (const m of played) {
+        let winnerId = null;
+        if (m.score.h > m.score.a) winnerId = m.homeId;
+        else if (m.score.a > m.score.h) winnerId = m.awayId;
+        
+        if (winnerId === playerId) {
+            streak++;
+        } else {
+            // Loss or Draw breaks the streak
+            break; 
+        }
+    }
+    return streak;
+}
+
+ 
 function getAvatarUI(p, w="w-8", h="h-8", text="text-xs") {
-    // Safety check: If player data is missing, return empty circle
     if (!p) return `<div class="${w} ${h} rounded-full bg-slate-800 border border-white/5"></div>`;
     
-    // Get first letter of name
     const initial = (p.name || "U").charAt(0).toUpperCase();
-    
-    // 1. If avatar link exists, return Image with Error Fallback
+    const isOnFire = (p.currentStreak || 0) >= 3;
+
+    // Inner Content (Image or Initials)
+    let innerContent = '';
     if (p.avatar) {
+        innerContent = `
+        <img src="${p.avatar}" class="w-full h-full rounded-full object-cover border border-white/10 bg-slate-800" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 hidden absolute inset-0 top-0 left-0">${initial}</div>`;
+    } else {
+        innerContent = `<div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10">${initial}</div>`;
+    }
+
+    // Wrapper Logic
+    if (isOnFire) {
+        return `
+        <div class="${w} ${h} avatar-flame-wrapper flex-shrink-0">
+            ${innerContent}
+            <div class="streak-fire-badge"><i data-lucide="flame" class="w-2 h-2 fill-orange-500"></i></div>
+        </div>`;
+    } else {
         return `
         <div class="${w} ${h} relative flex-shrink-0">
-            <img src="${p.avatar}" class="w-full h-full rounded-full object-cover border border-white/10 bg-slate-800" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-            <div class="${w} ${h} rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 hidden absolute inset-0">${initial}</div>
+            ${innerContent}
         </div>`;
     }
-    
-    // 2. If no link, return Initials Circle
-    return `<div class="${w} ${h} rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 flex-shrink-0">${initial}</div>`;
 }
+
 
 /**
  * Custom Notification Toast
@@ -1332,6 +1374,7 @@ async function checkAndRewardMilestones(playerId) {
 // --- 9. GLOBAL UI RENDERERS ---
 
 // [UPDATED] renderLeaderboard: Now supports "Privacy" Shop Item
+let scheduleTicker = null;
 function renderLeaderboard() {
     const list = document.getElementById('leaderboard-list');
     if(!list) return;
@@ -1422,12 +1465,54 @@ async function applyBulkSchedule() {
     }
 }
 
+// [NEW FUNCTION] startScheduleTicker: Updates all countdowns every second
+function startScheduleTicker() {
+    if (scheduleTicker) clearInterval(scheduleTicker); // Clear existing timer
+
+    const update = () => {
+        const now = new Date().getTime();
+        const elements = document.querySelectorAll('.active-countdown');
+
+        elements.forEach(el => {
+            const deadlineVal = el.getAttribute('data-deadline');
+            if (!deadlineVal) return;
+
+            const countDownDate = new Date(deadlineVal).getTime();
+            const distance = countDownDate - now;
+
+            if (distance < 0) {
+                el.innerHTML = `<span class="text-rose-500">EXPIRED</span>`;
+                el.classList.remove('bg-slate-950/50');
+                el.classList.add('bg-rose-500/10', 'border-rose-500/30');
+            } else {
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                // Format: 2d 10h 45m 30s
+                let timeStr = "";
+                if (days > 0) timeStr += `<span class="text-white">${days}d </span>`;
+                timeStr += `<span class="text-white">${hours}h </span>`;
+                timeStr += `<span class="text-white">${minutes}m </span>`;
+                timeStr += `<span class="text-gold-500 w-[14px] inline-block text-right">${seconds}s</span>`;
+
+                el.innerHTML = timeStr;
+            }
+        });
+    };
+
+    update(); // Run immediately
+    scheduleTicker = setInterval(update, 1000); // Repeat every second
+}
+
 // [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
+// [UPDATED] Render: Includes Time & Live Countdown
 function renderSchedule() {
     const active = document.getElementById('schedule-list');
     const recent = document.getElementById('recent-results-list');
     
-    // P1 Button Logic
+    // P1 Button Logic (Existing)
     const p1Btn = document.getElementById('p1-gen-btn');
     if (p1Btn) {
         const p1Exists = state.matches.some(m => m.phase === 1);
@@ -1448,29 +1533,23 @@ function renderSchedule() {
     const allScheduled = state.matches
         .filter(m => m.status === 'scheduled')
         .sort((a, b) => (a.round || 0) - (b.round || 0));
-
+    
     const display = (state.isAdmin || state.bulkMode) ? allScheduled : allScheduled.filter(m => m.scheduledDate === state.viewingDate);
     
-    // Admin Controls
+    // Admin Controls (Existing)
     if (state.isAdmin) {
         const controlsDiv = document.createElement('div');
         controlsDiv.className = "w-full max-w-[340px] mb-6 space-y-3";
         
         if (!state.bulkMode) {
-            // 1. Bulk Mode Button
             controlsDiv.innerHTML = `
             <button onclick="toggleBulkMode()" class="w-full py-3 bg-white/5 border border-white/10 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2">
                 <i data-lucide="list-checks" class="w-3 h-3"></i> Bulk Schedule Mode
-            </button>`;
-            
-            // 2. NEW: Download Schedule Button
-            controlsDiv.innerHTML += `
+            </button>
             <button onclick="showSchedulePreview()" class="w-full mt-2 py-3 bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2">
                 <i data-lucide="download" class="w-3 h-3"></i> Download Official Schedule
             </button>`;
-
         } else {
-            // Active Bulk Editor (No changes here)
             controlsDiv.innerHTML = `
                 <div class="moving-border-gold p-[1px] rounded-[1.6rem] animate-pop-in">
                     <div class="bg-slate-900 p-4 rounded-[1.5rem]">
@@ -1482,7 +1561,6 @@ function renderSchedule() {
         }
         active.appendChild(controlsDiv);
     }
-
     
     if (display.length === 0) active.innerHTML += `<p class="text-[8px] text-slate-600 font-black uppercase italic text-center py-4">No Active Fixtures</p>`;
     
@@ -1498,11 +1576,38 @@ function renderSchedule() {
         card.onclick = () => { if (state.bulkMode) toggleMatchSelection(m.id);
             else openResultEntry(m.id); };
         
-        // --- NEW DISPLAY LOGIC: Shows Round Number ---
+        // --- NEW LOGIC START: Time & Countdown ---
+        let formattedTime = "";
+        let countdownHTML = "";
+        
+        if (m.deadline) {
+            // 1. Format Time (e.g., 11:59 PM)
+            const dateObj = new Date(m.deadline);
+            const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            
+            formattedTime = `<span class="text-[7px] text-emerald-500 font-bold ml-1 border-l border-white/10 pl-2">@ ${timeStr}</span>`;
+            
+            // 2. Countdown Badge HTML
+            countdownHTML = `
+                <div class="mt-3 flex justify-center border-t border-white/5 pt-2">
+                    <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-white/5 active-countdown-wrapper">
+                        <i data-lucide="timer" class="w-3 h-3 text-gold-500 animate-pulse"></i>
+                        <span class="active-countdown text-[9px] font-black font-mono tracking-widest text-slate-300" data-deadline="${m.deadline}">
+                            CALCULATING...
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+        // --- NEW LOGIC END ---
+        
         let innerHTML = `
             <div class="bg-slate-900 p-4 rounded-[1.5rem] h-full relative z-10">
                 <div class="flex justify-between items-center mb-3">
-                    <span class="text-[7px] ${isSelected ? 'text-gold-500' : 'text-slate-500'} font-black uppercase transition-colors">${m.scheduledDate || 'NO DATE'}</span>
+                    <div class="flex items-center">
+                        <span class="text-[7px] ${isSelected ? 'text-gold-500' : 'text-slate-400'} font-black uppercase transition-colors">${m.scheduledDate || 'NO DATE'}</span>
+                        ${formattedTime}
+                    </div>
                     <span class="text-[7px] text-blue-400 font-black uppercase">PH-${m.phase} • R-${m.round || 1}</span>
                 </div>
                 
@@ -1516,38 +1621,34 @@ function renderSchedule() {
                         <span class="text-[10px] font-bold text-white truncate text-right">${a?.name || "TBD"}</span>
                         ${getAvatarUI(a, "w-8", "h-8")}
                     </div>
-                </div>`;
+                </div>
+                
+                ${countdownHTML}
+                `;
         
         if (state.bulkMode && isSelected) {
             innerHTML += `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"><div class="w-8 h-8 bg-gold-500 rounded-full flex items-center justify-center shadow-lg animate-pop-in"><i data-lucide="check" class="w-5 h-5 text-black"></i></div></div>`;
         }
-       if (state.isAdmin && !state.bulkMode) {
-    // 1. Get FULL names (removed the .split logic)
-    const hName = h ? h.name : 'HOME';
-    const aName = a ? a.name : 'AWAY';
-
-    innerHTML += `
-    <div class="mt-4 pt-3 border-t border-white/5 flex gap-2">
-        <button onclick="event.stopPropagation(); openSMS('${m.id}', 'home')" 
-            class="flex-1 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all overflow-hidden">
-            <i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> 
-            <span class="truncate">${hName}</span>
-        </button>
         
-        <button onclick="event.stopPropagation(); openSMS('${m.id}', 'away')" 
-            class="flex-1 py-2 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-blue-600 hover:text-white transition-all overflow-hidden">
-            <i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> 
-            <span class="truncate">${aName}</span>
-        </button>
-    </div>`;
-}
-
+        if (state.isAdmin && !state.bulkMode) {
+            const hName = h ? h.name : 'HOME';
+            const aName = a ? a.name : 'AWAY';
+            innerHTML += `
+             <div class="mt-3 pt-3 border-t border-white/5 flex gap-2">
+                 <button onclick="event.stopPropagation(); openSMS('${m.id}', 'home')" class="flex-1 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all overflow-hidden"><i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> <span class="truncate">${hName}</span></button>
+                 <button onclick="event.stopPropagation(); openSMS('${m.id}', 'away')" class="flex-1 py-2 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-lg text-[8px] font-black uppercase flex items-center justify-center gap-2 hover:bg-blue-600 hover:text-white transition-all overflow-hidden"><i data-lucide="message-square" class="w-3 h-3 flex-shrink-0"></i> <span class="truncate">${aName}</span></button>
+             </div>`;
+        }
+        
         innerHTML += `</div>`;
         card.innerHTML = innerHTML;
         active.appendChild(card);
     });
     
-    // Recent Results Logic (No Changes needed here)
+    // Start the countdown Engine
+    startScheduleTicker();
+    
+    // Recent Results Logic (Existing)
     const playedMatches = state.matches.filter(m => m.status === 'played').sort((a, b) => b.id.localeCompare(a.id));
     playedMatches.slice(0, 5).forEach(m => recent.appendChild(createMatchResultCard(m)));
     if (playedMatches.length > 5) recent.innerHTML += `<div class="w-full text-center mt-4"><button onclick="openFullHistory()" class="px-6 py-3 bg-white/5 border border-white/5 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 transition-all">View All Results (${playedMatches.length})</button></div>`;
@@ -2454,8 +2555,7 @@ function togglePreviewID() {
 }
 
 
-// --- NEW FEATURE: PERSONAL CARD GENERATOR (Updated v5 - Illustrations & Animation) ---
-// --- PERSONAL CARD GENERATOR (Big Picture & One-Line ID) ---
+// --- NEW FEATURE: PERSONAL CARD
 function showPersonalCardPreview() {
     const myID = localStorage.getItem('slc_user_id');
     const p = state.players.find(x => x.id === myID);
@@ -2576,6 +2676,7 @@ function showPersonalCardPreview() {
     }
 }
 
+// 2. EXECUTE THE ACTUAL DOWNLOAD
 // --- DOWNLOAD ENGINE (Fixed for Exact Fit) ---
 async function executeDownload() {
     const sourceElement = document.getElementById('capture-zone');
@@ -2617,7 +2718,7 @@ async function executeDownload() {
             allowTaint: false,
             backgroundColor: "#020617", // Force dark background
             scale: 2, // High Quality
-            width: width, // Exact width match
+            width: width,  // Exact width match
             height: height, // Exact height match
             scrollX: 0,
             scrollY: 0,
@@ -2650,8 +2751,15 @@ async function executeDownload() {
     }
 }
 
-// --- NEW: SCHEDULE GENERATOR ---
-function showSchedulePreview() {
+
+
+// --- UPDATED SCHEDULE GENERATOR (Pagination + BD Time + Details) ---
+
+let currentPreviewPage = 1; // Global tracker for pagination
+
+function showSchedulePreview(page = 1) {
+    currentPreviewPage = page; // Update tracker
+
     // 1. Filter: Scheduled matches that have BOTH Date and Deadline
     const validMatches = state.matches
         .filter(m => m.status === 'scheduled' && m.scheduledDate && m.deadline)
@@ -2659,40 +2767,64 @@ function showSchedulePreview() {
 
     if (validMatches.length === 0) return notify("No matches with Deadlines found!", "alert-circle");
 
-    // 2. Determine Header Date (Single date or 'Upcoming')
-    const uniqueDates = [...new Set(validMatches.map(m => m.scheduledDate))];
+    // 2. Pagination Logic (Max 8 per page)
+    const ITEMS_PER_PAGE = 5;
+    const totalPages = Math.ceil(validMatches.length / ITEMS_PER_PAGE);
+    
+    // Ensure page is within bounds
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+
+    const startIndex = (page - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const displayMatches = validMatches.slice(startIndex, endIndex);
+
+    // 3. Determine Header Date
+    const uniqueDates = [...new Set(displayMatches.map(m => m.scheduledDate))];
     const headerDate = uniqueDates.length === 1 ? uniqueDates[0] : "UPCOMING FIXTURES";
 
-    // 3. Build Match Rows
-    const rows = validMatches.map(m => {
+    // 4. Build Match Rows
+    const rows = displayMatches.map(m => {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         
-        // Format Time
-        const deadlineTime = m.deadline.split('T')[1] || "23:59";
+        // --- FIX: BD Time (GMT+6) & AM/PM ---
+        const dateObj = new Date(m.deadline);
+        const bdTime = dateObj.toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Dhaka', // Forces GMT+6
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+
+        // --- FIX: Add Phase & Round ---
+        const roundInfo = `PHASE ${m.phase} • R-${m.round || 1}`;
         
         return `
         <div class="schedule-export-row">
             <div class="schedule-players">
                 <div class="schedule-p">
                     ${getAvatarUI(h, "w-10", "h-10")}
-                    <span>${h?.name.split(' ')[0] || "TBD"}</span>
+                    <span style="font-size: 3px;">${h?.name || "TBD"}</span>
+
                 </div>
                 <div class="schedule-vs">VS</div>
                 <div class="schedule-p">
                     ${getAvatarUI(a, "w-10", "h-10")}
-                    <span>${a?.name.split(' ')[0] || "TBD"}</span>
+                    <span style="font-size: 3px;">${a?.name || "TBD"}</span>
+
                 </div>
             </div>
             <div class="schedule-info">
-                <span class="schedule-badge">Matchday</span>
-                <span class="schedule-badge" style="color:#10b981; margin-top:2px;">Deadline: <b class="schedule-highlight">${deadlineTime}</b></span>
+                <span class="schedule-badge" style="color:#64748b; font-size: 7px; margin-bottom: 2px;">${roundInfo}</span>
+                <span class="schedule-badge" style="color:#10b981;">Deadline: <b class="schedule-highlight">${bdTime}</b></span>
             </div>
         </div>`;
     }).join('');
 
-    // 4. Construct Final HTML
-    const html = `
+    // 5. Construct Final HTML (The Image Card)
+    // Note: We add specific page number info to the footer
+    const cardHtml = `
     <div class="export-card" id="capture-zone">
         <div class="export-header">
             <p style="color: #10b981; font-size: 8px; font-weight: 900; letter-spacing: 4px; margin-bottom: 5px;">SYNTHEX LEGION CHRONICLES</p>
@@ -2708,20 +2840,47 @@ function showSchedulePreview() {
         <div style="margin-top: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
              <p style="color: #64748b; font-size: 7px; text-transform: uppercase; font-weight: bold; margin-bottom:5px;">OFFICIAL TOURNAMENT MATCHDAY SCHEDULE</p>
              <p style="color: #94a3b8; font-size: 7px; max-width: 90%; margin: 0 auto; line-height: 1.5;">
-                Players must complete fixtures by the <b style="color: #f59e0b;">BOLD TIME</b> shown above. 
-                <br>Failure to report results by the deadline may result in penalties.
+                All players are required to complete their fixtures by the <b style="color: #f59e0b;">DEADLINE</b> indicated in the header above. 
+                <br>Page ${page} of ${totalPages}
              </p>
         </div>
     </div>`;
 
-    // 5. Inject & Open
+    // 6. Construct Pagination Controls (Not captured in image)
+    let controlsHtml = '';
+    if (totalPages > 1) {
+        controlsHtml = `
+        <div class="flex items-center justify-center gap-4 mt-6 mb-2">
+            <button onclick="changeSchedulePage(-1)" ${page === 1 ? 'disabled class="opacity-30"' : ''} class="px-4 py-2 bg-slate-800 rounded-xl text-white text-[9px] font-black uppercase border border-white/10">
+                <i data-lucide="chevron-left" class="w-4 h-4 inline"></i> Prev
+            </button>
+            <span class="text-gold-500 text-[10px] font-black uppercase tracking-widest">Page ${page} / ${totalPages}</span>
+            <button onclick="changeSchedulePage(1)" ${page === totalPages ? 'disabled class="opacity-30"' : ''} class="px-4 py-2 bg-slate-800 rounded-xl text-white text-[9px] font-black uppercase border border-white/10">
+                Next <i data-lucide="chevron-right" class="w-4 h-4 inline"></i>
+            </button>
+        </div>`;
+    }
+
+    // 7. Inject & Open
     const previewArea = document.getElementById('preview-content-area');
     if(previewArea) {
-        previewArea.innerHTML = html;
-        openModal('modal-download-preview');
+        previewArea.innerHTML = cardHtml + controlsHtml;
+        
+        // Only open modal if it's not already open (prevents flickering during page switch)
+        const modal = document.getElementById('modal-download-preview');
+        if (modal.classList.contains('hidden')) {
+            openModal('modal-download-preview');
+        }
+        
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 }
+
+// Helper function to switch pages
+function changeSchedulePage(direction) {
+    showSchedulePreview(currentPreviewPage + direction);
+}
+
 // --- NEW FEATURE: HOME RANKING SWITCHER ---
 
 function switchHomeRank(type) {
@@ -2858,21 +3017,36 @@ function renderTop5Leaderboard() {
     const container = document.getElementById('top5-leaderboard-list');
     if (!container) return;
     
-    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty).slice(0, 5);
+    // 1. Sort Players & Get Data
+    const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
+    const top5 = sortedPlayers.slice(0, 5);
+    
+    // 2. Identify Current User
+    const myID = localStorage.getItem('slc_user_id');
+    const myPlayer = state.players.find(p => p.id === myID);
+    const myRankIndex = sortedPlayers.findIndex(p => p.id === myID); // 0-based index
     
     container.innerHTML = '';
     
-    sortedPlayers.forEach((p, i) => {
+    // 3. Render Top 5 Loop
+    top5.forEach((p, i) => {
         const rank = getRankInfo(p.bounty);
         const isTop3 = i < 3;
+        
+        // --- STREAK CHECK ---
+        const isOnFire = (p.currentStreak || 0) >= 3;
         
         let medal = '';
         if (i === 0) medal = '🥇';
         if (i === 1) medal = '🥈';
         if (i === 2) medal = '🥉';
         
+        // Determine Border Class: Flame overrides Gold/Standard
+        let borderClass = isTop3 ? 'moving-border-gold' : 'moving-border';
+        if (isOnFire) borderClass = 'moving-border-flame'; 
+
         container.innerHTML += `
-            <div class="moving-border ${isTop3 ? 'moving-border-gold' : ''} p-[1px] rounded-[1.4rem]">
+            <div class="${borderClass} p-[1px] rounded-[1.4rem] mb-2">
                 <div class="bg-slate-900 p-3 rounded-[1.3rem] flex items-center relative z-10">
                     <div class="flex items-center gap-3 flex-1 min-w-0">
                         <div class="relative">
@@ -2885,55 +3059,123 @@ function renderTop5Leaderboard() {
                             <div class="flex items-center gap-1 mb-1">
                                 <h3 class="text-[11px] font-black text-white truncate">${p.name}</h3>
                                 ${medal ? `<span class="text-xs">${medal}</span>` : ''}
+                                ${isOnFire ? `<span class="text-[7px] bg-orange-500/20 text-orange-500 px-1.5 py-0.5 rounded font-black uppercase border border-orange-500/30 tracking-wider">🔥 ${p.currentStreak} Streak</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-[7px] ${rank.color} font-black uppercase">${rank.name}</span>
                                 <span class="text-[7px] text-slate-500">•</span>
                                 <span class="text-[7px] text-slate-500 font-bold">${p.mp || 0}M ${p.wins || 0}W ${p.draws || 0}D ${p.losses || 0}L</span>
+
                             </div>
                         </div>
                     </div>
                     <div class="text-right ml-2">
-                        <p class="text-sm font-black text-emerald-400">${p.bounty.toLocaleString()}</p>
+                        <p class="text-sm font-black ${isOnFire ? 'text-orange-400' : 'text-emerald-400'}">${p.bounty.toLocaleString()}</p>
                         <p class="text-[7px] text-slate-500 uppercase font-bold">BP</p>
                     </div>
                 </div>
             </div>
         `;
     });
+
+    // 4. --- PERSONAL RANKING (If outside Top 5) ---
+    // This section now handles the FLAME check for "Your Rank" as well
+    if (myPlayer && myRankIndex >= 5) {
+        const p = myPlayer;
+        const rank = getRankInfo(p.bounty);
+        
+        // --- STREAK CHECK FOR SELF ---
+        const isOnFire = (p.currentStreak || 0) >= 3;
+
+        // Determine Border Class for Self
+        let borderClass = 'moving-border-blue';
+        if (isOnFire) borderClass = 'moving-border-flame';
+
+        // A. Visual Separator
+        container.innerHTML += `
+            <div class="flex items-center gap-2 my-3 opacity-60">
+                <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                <span class="text-[7px] font-black text-emerald-500 uppercase tracking-[0.2em]">Your Rank</span>
+                <div class="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+            </div>
+        `;
+
+        // B. Personal Row (Highlighted)
+        container.innerHTML += `
+            <div class="${borderClass} p-[1px] rounded-[1.4rem] animate-pop-in shadow-lg shadow-emerald-500/5">
+                <div class="bg-slate-900 p-3 rounded-[1.3rem] flex items-center relative z-10 border border-emerald-500/20">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="relative">
+                            ${getAvatarUI(p, "w-10", "h-10")}
+                            <div class="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border border-slate-900 flex items-center justify-center shadow-lg">
+                                <span class="text-[7px] font-black text-white">#${myRankIndex + 1}</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1 mb-1">
+                                <h3 class="text-[11px] font-black ${isOnFire ? 'text-orange-400' : 'text-emerald-400'} truncate">${p.name} (You)</h3>
+                                ${isOnFire ? `<span class="text-[7px] bg-orange-500/20 text-orange-500 px-1.5 py-0.5 rounded font-black uppercase border border-orange-500/30 tracking-wider">🔥 ${p.currentStreak} Streak</span>` : ''}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[7px] ${rank.color} font-black uppercase">${rank.name}</span>
+                                <span class="text-[7px] text-slate-500">•</span>
+                                <span class="text-[7px] text-slate-400 font-bold">${p.mp || 0}M ${p.wins || 0}W ${p.draws || 0}D ${p.losses || 0}L</span>
+
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right ml-2">
+                        <p class="text-sm font-black text-white">${p.bounty.toLocaleString()}</p>
+                        <p class="text-[7px] text-emerald-500 uppercase font-bold">BP</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 }
+
+
+
 
 function renderFullLeaderboard() {
     const container = document.getElementById('full-leaderboard-list');
     if (!container) return;
     
     const sortedPlayers = [...state.players].sort((a, b) => b.bounty - a.bounty);
-    
     container.innerHTML = '';
     
     sortedPlayers.forEach((p, i) => {
-        const rank = getRankInfo(p.bounty);
         const isTop3 = i < 3;
+        const isOnFire = (p.currentStreak || 0) >= 3;
         
+        // Determine Border
+        let borderClass = isTop3 ? 'moving-border-gold' : 'moving-border-blue';
+        if (isOnFire) borderClass = 'moving-border-flame';
+
         container.innerHTML += `
-            <div class="moving-border ${isTop3 ? 'moving-border-gold' : 'moving-border-blue'} p-[1px] rounded-[1.2rem]">
+            <div class="${borderClass} p-[1px] rounded-[1.2rem]">
                 <div class="bg-slate-900 p-3 rounded-[1.1rem] flex items-center relative z-10">
                     <span class="text-[10px] font-black w-6 text-center ${isTop3 ? 'text-gold-500' : 'text-slate-600'}">#${i+1}</span>
                     
                     <div class="mx-2">${getAvatarUI(p, "w-8", "h-8")}</div>
                     
                     <div class="flex-1 overflow-hidden">
-                        <span class="font-bold text-xs text-white uppercase truncate block">${p.name}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-xs text-white uppercase truncate block">${p.name}</span>
+                            ${isOnFire ? `<i data-lucide="flame" class="w-3 h-3 text-orange-500 fill-orange-500"></i>` : ''}
+                        </div>
                         <p class="text-[7px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
-                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0} • L: ${p.losses || 0}
+                            M: ${p.mp || 0} • W: ${p.wins || 0} • D: ${p.draws || 0}
                         </p>
                     </div>
-                    <span class="font-black text-emerald-400 text-xs ml-2">${p.bounty.toLocaleString()}</span>
+                    <span class="font-black ${isOnFire ? 'text-orange-400' : 'text-emerald-400'} text-xs ml-2">${p.bounty.toLocaleString()}</span>
                 </div>
             </div>
         `;
     });
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 // Update the renderTopScorers function to work with the new section:
 
@@ -3030,12 +3272,19 @@ function renderTopScorers() {
 }
 
 // Update the refreshUI function to include the new leaderboard rendering:
-// [CORRECTED] refreshUI: Ends properly before the next function starts
 function refreshUI() {
     const rawID = localStorage.getItem('slc_user_id') || "";
     const myID = rawID.toUpperCase();
+    
+    // --- NEW: Calculate Streak for ALL players first ---
+    state.players.forEach(p => {
+        p.currentStreak = calculateWinStreak(p.id);
+    });
+    // ---------------------------------------------------
+
     const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
     
+    // ... (Keep existing code for userBountyEl and totalBP) ...
     const userBountyEl = document.getElementById('user-bounty-display');
     if (userBountyEl) {
         if (state.isAdmin) {
@@ -3052,16 +3301,16 @@ function refreshUI() {
     checkPhaseLocks();
 
     try {
-        renderTop5Leaderboard();
+        renderTop5Leaderboard(); // This will now pick up the streak data
         
         if (document.getElementById('shop-section') && !document.getElementById('shop-section').classList.contains('hidden')) {
             renderShop();
         }
         
+        // ... (Keep the rest of the existing refreshUI logic) ...
         if (document.getElementById('scorers-full-section') && !document.getElementById('scorers-full-section').classList.contains('hidden')) {
             renderTopScorers();
         }
-        
         checkVaultStatus();
         renderSchedule();
         renderEliteBracket();
@@ -3071,7 +3320,8 @@ function refreshUI() {
     } catch (err) {
         console.error("UI Render Error:", err);
     }
-} // <--- refreshUI ENDS HERE
+}
+
 
 // [MOVED] checkTournamentWinner: Now completely outside and global
 function checkTournamentWinner() {
