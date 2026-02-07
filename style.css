@@ -783,3 +783,42 @@ button[onclick="showStandingsPreview()"] {
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 10px, black 90%, transparent);
     padding: 10px 0;
 }
+
+/* --- BETTING SYSTEM STYLES --- */
+.moving-border-purple {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+}
+
+.moving-border-purple::before {
+    content: ''; 
+    position: absolute; 
+    z-index: -2; 
+    left: -50%; 
+    top: -50%; 
+    width: 200%; 
+    height: 200%; 
+    background: conic-gradient(transparent, #a855f7, #d8b4fe, transparent 50%); 
+    animation: rotate 4s linear infinite;
+}
+
+.moving-border-purple::after {
+    content: ''; 
+    position: absolute; 
+    z-index: -1; 
+    inset: 1.5px; 
+    background: var(--slate-900); 
+    border-radius: inherit;
+}
+
+.bet-option-btn {
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.bet-option-btn.selected {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: #a855f7;
+    color: white;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+}
