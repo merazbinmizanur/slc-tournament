@@ -23,6 +23,8 @@ const ADMIN_KEY = "001100";
 const P2_LIMIT_HIGH = 3;
 const P2_LIMIT_STD = 2;
 const STARTING_BOUNTY = 500;
+const BETTING_MAX_STAKE_PERCENT = 0.20; // 20% Limit
+const BETTING_ODDS_CAP = 2.50; // Max Odds 2.5x
 // --- SHOP CONFIGURATION ---
 const SHOP_ITEMS = {
     insurance: { 
@@ -93,7 +95,9 @@ let state = {
     brokerSubTab: 'hunts',
     bulkMode: false,
     matchAlertShown: false,
-    selectedMatches: new Set()
+    selectedMatches: new Set(),
+    bettingActive: true,
+    myBets: new Set()
 };
 let confirmCallback = null;
 let alertInterval = null; 
@@ -435,16 +439,33 @@ function listenToCloud() {
         state.matches = snapshot.docs.map(doc => doc.data());
         refreshUI();
     });
+    
+    // --- UPDATED SETTINGS LISTENER ---
     db.collection("settings").doc("global").onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
             state.viewingDate = data.activeDate;
             state.phase3UnlockTime = data.phase3UnlockTime || null;
-            // [NEW] Capture Sponsor Message
             state.sponsorMessage = data.sponsorMessage || ""; 
+            // Capture Betting Status (Default to true if undefined)
+            state.bettingActive = data.bettingActive !== false; 
             refreshUI();
         }
     });
+    // --- NEW: LISTEN TO MY BETS (To prevent double betting) ---
+    const myID = localStorage.getItem('slc_user_id');
+    if (myID && !localStorage.getItem('slc_admin')) {
+        db.collection("bets")
+            .where("userId", "==", myID)
+            .onSnapshot(snapshot => {
+                const betSet = new Set();
+                snapshot.docs.forEach(doc => {
+                    betSet.add(doc.data().matchId);
+                });
+                state.myBets = betSet;
+                refreshUI(); // Refresh to update buttons
+            });
+    }
     checkTournamentWinner();
 }
 
@@ -704,50 +725,96 @@ async function sendChallenge(hunterId, targetId, type) {
     } catch (e) { notify("Cloud error", "x-circle"); }
 }
 
+/**
+ * PHASE 2: RESPOND TO CHALLENGE
+ * Handles the acceptance or decline of a match request.
+ * If declined without a pass, 5% of the target's BP is transferred to the challenger.
+ */
 async function respondToChallenge(matchId, action) {
     const match = state.matches.find(m => m.id === matchId);
     if (!match) return notify("Match missing", "x-octagon");
 
-    const h = state.players.find(p => p.id === match.homeId);
-    const t = state.players.find(p => p.id === match.awayId);
+    const h = state.players.find(p => p.id === match.homeId); // The Challenger (Hunter)
+    const t = state.players.find(p => p.id === match.awayId); // The Target (Requested Player)
 
     if (action === 'accept') {
-        if (match.stakeType === 'high' && ((h.p2High || 0) >= 3 || (t.p2High || 0) >= 3)) return notify("Slot Error: Limit reached", "alert-triangle");
-        if (match.stakeType === 'std' && ((h.p2Std || 0) >= 2 || (t.p2Std || 0) >= 2)) return notify("Slot Error: Limit reached", "alert-triangle");
+        // Validation: Ensure slots are still available before accepting
+        if (match.stakeType === 'high' && ((h.p2High || 0) >= 3 || (t.p2High || 0) >= 3)) {
+            return notify("Slot Error: Limit reached", "alert-triangle");
+        }
+        if (match.stakeType === 'std' && ((h.p2Std || 0) >= 2 || (t.p2Std || 0) >= 2)) {
+            return notify("Slot Error: Limit reached", "alert-triangle");
+        }
 
         try {
             const batch = db.batch();
             const field = match.stakeType === 'high' ? 'p2High' : 'p2Std';
             
+            // Increment match counts for both players
             batch.update(db.collection("players").doc(h.id), { [field]: firebase.firestore.FieldValue.increment(1) });
             batch.update(db.collection("players").doc(t.id), { [field]: firebase.firestore.FieldValue.increment(1) });
+            
+            // Move match to scheduled status
             batch.update(db.collection("matches").doc(matchId), { status: 'scheduled' });
             
             await batch.commit();
             notify("Contract Scheduled!", "check-circle");
-        } catch (e) { notify("Sync Failed", "x-circle"); }
+        } catch (e) { 
+            console.error(e);
+            notify("Sync Failed", "x-circle"); 
+        }
     } 
-     else {
-        // DECLINE LOGIC WITH ITEM CHECK
+    else {
+        // --- UPDATED DECLINE LOGIC: 5% FEE TRANSFERRED TO HUNTER ---
         const activeEff = t.active_effects || {};
         
+        // Check if player has a Decline Pass active
         if (activeEff.decline_pass) {
              askConfirm("Use DECLINE PASS to waive penalty?", async () => {
                 const batch = db.batch();
-                // Remove Item
                 batch.update(db.collection("players").doc(t.id), { "active_effects.decline_pass": false });
                 batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
                 await batch.commit();
                 notify("Declined using Pass (0 BP)", "shield-check");
              });
         } else {
-            // STANDARD PENALTY
+            // Calculate 5% Penalty of the Target's current Bounty
             const penalty = Math.floor(t.bounty * 0.05);
-            // ... (Existing standard decline code) ...
+            
+            askConfirm(`Refusing pays 5% (${penalty} BP) to ${h.name}. Confirm?`, async () => {
+                try {
+                    const batch = db.batch();
+                    
+                    // Mark match as declined
+                    batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
+                    
+                    // Deduct 5% from the Target (t)
+                    batch.update(db.collection("players").doc(t.id), { 
+                        bounty: firebase.firestore.FieldValue.increment(-penalty) 
+                    });
+                    
+                    // Add 5% to the Challenger (h)
+                    batch.update(db.collection("players").doc(h.id), { 
+                        bounty: firebase.firestore.FieldValue.increment(penalty) 
+                    });
+                    
+                    await batch.commit();
+                    
+                    // Log transactions for both players to maintain history
+                    logTransaction(t.id, -penalty, 'Fine', `Declined Match from ${h.name}`);
+                    logTransaction(h.id, penalty, 'Reward', `${t.name} Paid Decline Fee`);
+                    
+                    notify(`Match Declined. ${penalty} BP transferred to ${h.name}`, "thumbs-down");
+                } catch (e) {
+                    console.error(e);
+                    notify("Cloud transfer failed", "x-circle");
+                }
+            });
         }
     }
-
 }
+
+
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
 function renderPlayerDashboard() {
@@ -969,7 +1036,14 @@ function renderPlayerDashboard() {
 <button onclick="forceRebuildHistory()" class="w-full py-4 mb-3 bg-purple-600/10 border border-purple-500/30 text-purple-400 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-purple-600 hover:text-white transition-all">
                     <i data-lucide="history" class="w-3 h-3 inline mr-2"></i> Reconstruct All History
                 </button>
+                <!-- NEW: STOP/START BETTING BUTTON -->
+<button onclick="toggleBettingSystem()" class="w-full py-4 mb-3 ${state.bettingActive ? 'bg-rose-600/10 border-rose-500/30 text-rose-500 hover:bg-rose-600' : 'bg-emerald-600/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-600'} border font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:text-white transition-all">
+    <i data-lucide="${state.bettingActive ? 'ban' : 'power'}" class="w-3 h-3 inline mr-2"></i> 
+    ${state.bettingActive ? 'STOP BETTING SYSTEM' : 'ACTIVATE BETTING SYSTEM'}
+</button>
+<!-- END NEW BUTTON -->
                 <button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
+                
             </div>`;
     } else {
         // --- PLAYER VIEW BUTTONS ---
@@ -1340,6 +1414,44 @@ async function saveMatchResult() {
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
+                // --- UPDATED BETTING PAYOUT ENGINE (10% BROKER TAX & HISTORY) ---
+        const betsSnap = await db.collection("bets") 
+            .where("matchId", "==", m.id)
+            .where("status", "==", "pending")
+            .get();
+        
+        betsSnap.forEach(doc => {
+            const bet = doc.data();
+            let isWin = false;
+            
+            let resultType = 'draw';
+            if (sH > sA) resultType = 'home';
+            else if (sA > sH) resultType = 'away';
+
+            if (bet.selection === resultType) isWin = true;
+
+            if (isWin) {
+                // Calculate Net Payout (Stake * Odds) - 10% Tax
+                const rawPayout = bet.potentialPayout; 
+                const brokerTax = Math.floor(rawPayout * 0.10); 
+                const netPayout = rawPayout - brokerTax;
+                
+                // Update Player Wallet
+                batch.update(db.collection("players").doc(bet.userId), {
+                    bounty: firebase.firestore.FieldValue.increment(netPayout)
+                });
+
+                // Log Winning Transaction
+                logTransaction(bet.userId, netPayout, 'Betting', `Bet Won! (Tax: ${brokerTax} BP added to Pool)`);
+
+                // Update Bet Status
+                batch.update(doc.ref, { status: 'won', taxPaid: brokerTax });
+            } else {
+                batch.update(doc.ref, { status: 'lost' });
+            }
+        });
+
+
         // CONSUME ITEMS
         const consumeItem = (pid, effectName) => {
             batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
@@ -1372,18 +1484,19 @@ async function saveMatchResult() {
         });
         
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
+        
         await batch.commit();
-            // [NEW] Log Match Result Transactions
-    // Note: We use the calculated hBP and aBP variables from your existing logic
-    const hDesc = `Match vs ${aObj?.name || 'Opponent'}`;
-    const aDesc = `Match vs ${hObj?.name || 'Opponent'}`;
-    
-    // Determine category based on points
-    const hCat = hBP > 0 ? 'Match Win' : (hBP < 0 ? 'Match Loss' : 'Match Draw');
-    const aCat = aBP > 0 ? 'Match Win' : (aBP < 0 ? 'Match Loss' : 'Match Draw');
 
-    logTransaction(m.homeId, hBP, hCat, hDesc);
-    logTransaction(m.awayId, aBP, aCat, aDesc);
+        // Log Match Result Transactions
+        const hDesc = `Match vs ${aObj?.name || 'Opponent'}`;
+        const aDesc = `Match vs ${hObj?.name || 'Opponent'}`;
+        
+        const hCat = hBP > 0 ? 'Match Win' : (hBP < 0 ? 'Match Loss' : 'Match Draw');
+        const aCat = aBP > 0 ? 'Match Win' : (aBP < 0 ? 'Match Loss' : 'Match Draw');
+
+        logTransaction(m.homeId, hBP, hCat, hDesc);
+        logTransaction(m.awayId, aBP, aCat, aDesc);
+
         if (sanctionPercent > 0) {
             notify(`Sanction Applied: Reward -${sanctionPercent}%`, "alert-triangle");
         } else {
@@ -1402,6 +1515,7 @@ async function saveMatchResult() {
         notify("Sync Error", "x-circle");
     }
 }
+
 
 
 // [UPDATED] openResultEntry: Uses Avatar Engine for pictures
@@ -1643,12 +1757,192 @@ function startScheduleTicker() {
     scheduleTicker = setInterval(update, 1000); // Repeat every second
 }
 
+// --- BETTING ENGINE ---
+
+function calculateMatchOdds(h, a) {
+    // 1. Calculate Strength Scores
+    // Formula: BP + (Wins * 50) + (Goals * 5) + (Streak * 20)
+    const getStrength = (p) => {
+        if (!p) return 500;
+        const streak = calculateWinStreak(p.id);
+        let score = (p.bounty * 0.5) + ((p.wins || 0) * 50) + ((p.goals || 0) * 5);
+        if (streak > 2) score += (streak * 20);
+        return Math.max(100, score);
+    };
+    
+    const sH = getStrength(h);
+    const sA = getStrength(a);
+    const total = sH + sA;
+    
+    // 2. Raw Win Probabilities
+    let probH = sH / total;
+    let probA = sA / total;
+    
+    // 3. Convert to Odds (1 / Probability)
+    // We add a 'House Edge' factor naturally by how we clamp
+    let oddsH = 1 / probH;
+    let oddsA = 1 / probA;
+    
+    // 4. Draw Odds Logic (Closer teams = Lower Draw Odds)
+    const diff = Math.abs(sH - sA);
+    const maxDiff = 1000; // Arbitrary scaler
+    // If teams equal, draw is likely (~2.0). If very different, draw unlikely (~2.5 max)
+    let oddsD = 2.0 + (Math.min(diff, maxDiff) / maxDiff) * 0.5;
+    
+    // 5. Apply CAP (Max 2.5x) and Floor (Min 1.1x)
+    const clamp = (val) => Math.min(BETTING_ODDS_CAP, Math.max(1.10, val));
+    
+    return {
+        h: parseFloat(clamp(oddsH).toFixed(2)),
+        d: parseFloat(clamp(oddsD).toFixed(2)),
+        a: parseFloat(clamp(oddsA).toFixed(2))
+    };
+}
+
+let activeBet = { mid: null, selection: null, odds: 0 };
+
+function openBettingModal(mid) {
+    const m = state.matches.find(x => x.id === mid);
+    if (!m) return;
+    
+    const h = state.players.find(p => p.id === m.homeId);
+    const a = state.players.find(p => p.id === m.awayId);
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    
+    if (!me) return notify("Login required to bet", "lock");
+    
+    // Recalculate odds live
+    const odds = calculateMatchOdds(h, a);
+    
+    // UI Setup
+    document.getElementById('bet-h-name').innerText = h.name;
+    document.getElementById('bet-a-name').innerText = a.name;
+    
+    document.getElementById('odds-home').innerText = odds.h + 'x';
+    document.getElementById('odds-draw').innerText = odds.d + 'x';
+    document.getElementById('odds-away').innerText = odds.a + 'x';
+    
+    document.getElementById('bet-wallet-display').innerText = `${me.bounty} BP`;
+    
+    // Set Limits
+    const maxBet = Math.floor(me.bounty * BETTING_MAX_STAKE_PERCENT);
+    document.getElementById('bet-max-val').innerText = maxBet;
+    document.getElementById('bet-stake-input').max = maxBet;
+    document.getElementById('bet-stake-input').value = '';
+    
+    // Reset State
+    activeBet = { mid: mid, selection: null, oddsObj: odds };
+    document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('btn-confirm-bet').disabled = true;
+    updatePotentialReturn();
+    
+    openModal('modal-betting');
+}
+
+function selectBetOutcome(selection) {
+    activeBet.selection = selection;
+    
+    // Visual Update
+    document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById(`btn-bet-${selection}`).classList.add('selected');
+    
+    // Determine Odds
+    if (selection === 'home') activeBet.odds = activeBet.oddsObj.h;
+    if (selection === 'draw') activeBet.odds = activeBet.oddsObj.d;
+    if (selection === 'away') activeBet.odds = activeBet.oddsObj.a;
+    
+    updatePotentialReturn();
+}
+
+function updatePotentialReturn() {
+    const stake = parseInt(document.getElementById('bet-stake-input').value) || 0;
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const maxBet = Math.floor(me.bounty * BETTING_MAX_STAKE_PERCENT);
+    const btn = document.getElementById('btn-confirm-bet');
+    const msg = document.getElementById('bet-limit-msg');
+    
+    let potential = 0;
+    
+    // Validations
+    if (stake > maxBet) {
+        msg.classList.remove('hidden');
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+        msg.classList.add('hidden');
+        if (activeBet.selection && stake > 0) {
+            potential = Math.floor(stake * activeBet.odds);
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    }
+    
+    document.getElementById('bet-return-display').innerText = `${potential} BP`;
+}
+
+async function placeBet() {
+    const stake = parseInt(document.getElementById('bet-stake-input').value);
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID); //
+    // --- NEW SAFETY CHECKS ---
+    if (!state.bettingActive) return notify("Betting System is currently closed.", "lock");
+    if (state.myBets.has(activeBet.mid)) return notify("You already have a bet on this match.", "alert-triangle");
+    // -------------------------
+    
+    if (!activeBet.selection || !stake) return;
+    
+    try {
+        const batch = db.batch();
+        const betRef = db.collection("bets").doc();
+        
+        // 1. Create Bet Ticket
+        batch.set(betRef, {
+            id: betRef.id,
+            userId: myID,
+            matchId: activeBet.mid,
+            selection: activeBet.selection,
+            stake: stake,
+            odds: activeBet.odds,
+            potentialPayout: Math.floor(stake * activeBet.odds),
+            status: 'pending',
+            timestamp: Date.now()
+        });
+        
+        // 2. Deduct Funds Immediately
+        batch.update(db.collection("players").doc(myID), {
+            bounty: firebase.firestore.FieldValue.increment(-stake)
+        });
+        
+        await batch.commit();
+        
+        // 3. UPDATED: Log to Transaction History
+        logTransaction(myID, -stake, 'Betting', `Wager placed on ${activeBet.selection.toUpperCase()} (Odds: ${activeBet.odds}x)`);
+        
+        notify("Bet Placed Successfully!", "banknote");
+        closeModal('modal-betting');
+        
+    } catch (e) {
+        console.error(e);
+        notify("Bet Failed", "x-circle");
+    }
+}
+
 // [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
 function renderSchedule() {
     const active = document.getElementById('schedule-list');
     const recent = document.getElementById('recent-results-list');
     const myFixtureContainer = document.getElementById('my-fixture-container');
     const myFixtureDivider = document.getElementById('my-fixture-divider');
+    
+    // --- [ADDED] Get Current Player Object for Betting Logic ---
+    const myID_raw = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID_raw);
+    // ---------------------------------------------------------
     
     // P1 Button Logic
     const p1Btn = document.getElementById('p1-gen-btn');
@@ -1802,10 +2096,10 @@ function renderSchedule() {
         // --- NEW: SANCTION CHECK FOR MAIN LIST ---
         const sanction = getSanctionPercentage(m.deadline);
         const isLate = sanction > 0;
-
+    
         let borderClass = state.bulkMode ? (isSelected ? 'moving-border-gold' : 'moving-border') : 'moving-border-emerald';
         if (isLate && !state.bulkMode) borderClass = 'moving-border-rose'; // Red Border if late
-
+    
         const card = document.createElement('div');
         card.className = `${borderClass} p-[1px] rounded-[1.6rem] mb-4 w-full max-w-[340px] mx-auto shadow-xl transition-transform ${state.bulkMode ? 'cursor-pointer' : 'active:scale-95'}`;
         
@@ -1875,21 +2169,72 @@ function renderSchedule() {
              </div>`;
         }
         
-        innerHTML += `</div>`;
-        card.innerHTML = innerHTML;
-        active.appendChild(card);
-    });
+        // --- UPDATED BETTING SYSTEM UI ---
+const odds = calculateMatchOdds(h, a);
+
+// Check 1: Is user logged in and not admin?
+const isPlayer = !state.isAdmin && me;
+// Check 2: Are they not playing in this match?
+const isNotParticipant = isPlayer && m.homeId !== myID && m.awayId !== myID;
+// Check 3: Is match valid?
+const isValidMatch = m.deadline && !state.bulkMode;
+
+// LOGIC: Show UI if Player + Not Participant + Valid Match
+if (isPlayer && isNotParticipant && isValidMatch) {
     
-    startScheduleTicker();
-    
-    const playedMatches = state.matches.filter(m => m.status === 'played').sort((a, b) => b.id.localeCompare(a.id));
-    playedMatches.slice(0, 5).forEach(m => recent.appendChild(createMatchResultCard(m)));
+    // CONDITION 1: GLOBAL BETTING STOPPED
+    if (!state.bettingActive) {
+        // Do not render anything (vanish), or optionally render a "Suspended" badge
+        // innerHTML += ``; // Renders nothing
+    }
+    // CONDITION 2: ALREADY BET ON THIS MATCH
+    else if (state.myBets.has(m.id)) {
+        innerHTML += `
+                <div class="mt-3 pt-3 border-t border-white/5 text-center">
+                    <div class="w-full py-2 bg-purple-900/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2">
+                        <i data-lucide="ticket" class="w-3 h-3 text-purple-400"></i>
+                        <span class="text-[8px] font-black text-purple-400 uppercase tracking-widest">Wager Active</span>
+                    </div>
+                </div>`;
+    }
+    // CONDITION 3: ALLOW BETTING
+    else {
+        innerHTML += `
+                <div class="mt-3 pt-3 border-t border-white/5 relative group">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-2">
+                        <span class="text-[6px] text-purple-400 font-black uppercase tracking-widest border border-purple-500/30 px-1 rounded bg-purple-500/10">Betting</span>
+                    </div>
+                    
+                    <div class="flex justify-between items-center mb-2 px-2">
+                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Home</span><span class="text-[8px] font-black text-purple-400">${odds.h}x</span></div>
+                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Draw</span><span class="text-[8px] font-black text-purple-400">${odds.d}x</span></div>
+                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Away</span><span class="text-[8px] font-black text-purple-400">${odds.a}x</span></div>
+                    </div>
+
+                    <button onclick="openBettingModal('${m.id}')" class="w-full py-2 bg-gradient-to-r from-purple-900/40 to-purple-800/40 border border-purple-500/30 rounded-xl text-[8px] font-black text-white uppercase tracking-widest hover:bg-purple-600 transition-all shadow-[0_0_10px_rgba(168,85,247,0.1)] flex items-center justify-center gap-2">
+                        <i data-lucide="banknote" class="w-3 h-3 text-purple-400"></i> Place Bet
+                    </button>
+                </div>`;
+    }
+}
+// ---------------------------------
+
+innerHTML += `</div>`;
+card.innerHTML = innerHTML;
+active.appendChild(card);
+});
+
+startScheduleTicker();
+
+const playedMatches = state.matches.filter(m => m.status === 'played').sort((a, b) => b.id.localeCompare(a.id));
+playedMatches.slice(0, 5).forEach(m =>
+recent.appendChild(createMatchResultCard(m)));
     if (playedMatches.length > 5) recent.innerHTML += `<div class="w-full text-center mt-4"><button onclick="openFullHistory()" class="px-6 py-3 bg-white/5 border border-white/5 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest hover:bg-white/10 transition-all">View All Results (${playedMatches.length})</button></div>`;
     if (playedMatches.length === 0) recent.innerHTML = `<p class="text-[8px] text-slate-600 font-black uppercase italic text-center">No matches played yet</p>`;
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
-}
 
+}
 
 
 // [UPDATED] createMatchResultCard: Shows Submitters Name
@@ -3936,6 +4281,22 @@ async function forceRebuildHistory() {
         } catch (e) {
             console.error(e);
             notify("Rebuild Failed", "x-circle");
+        }
+    });
+}
+// --- NEW ADMIN FUNCTION ---
+async function toggleBettingSystem() {
+    const action = state.bettingActive ? "STOP" : "ACTIVATE";
+    askConfirm(`${action} global betting? Existing bets remain valid.`, async () => {
+        try {
+            await db.collection("settings").doc("global").set({
+                bettingActive: !state.bettingActive
+            }, { merge: true });
+            
+            notify(`Betting System ${state.bettingActive ? 'Stopped' : 'Activated'}`, "check-circle");
+        } catch (e) {
+            console.error(e);
+            notify("Update Failed", "x-circle");
         }
     });
 }
