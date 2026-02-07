@@ -782,6 +782,59 @@
                     </div>
                 </div>
             </div>
+<div class="bg-slate-900 border border-purple-500/20 rounded-[2.5rem] p-6 shadow-xl relative overflow-hidden mt-6">
+    <div class="absolute -right-10 -top-10 w-40 h-40 bg-purple-500/5 rounded-full blur-3xl"></div>
+    
+    <h2 class="text-xs font-black text-purple-400 uppercase tracking-widest mb-6 italic flex items-center gap-2 relative z-10">
+        <i data-lucide="banknote" class="w-3 h-3"></i> High Stakes Betting Protocol
+    </h2>
+
+    <div class="space-y-5 relative z-10">
+        <div>
+            <h3 class="text-[9px] font-black text-white uppercase mb-2 tracking-wider border-b border-white/5 pb-1">01. Betting Limits</h3>
+            <p class="text-[8px] text-slate-400 font-bold leading-relaxed uppercase">
+                To maintain market stability, a Hunter may only wager a maximum of <span class="text-purple-400">20% of their current total Bounty Points</span> on any single fixture. The system automatically calculates this cap based on your live balance.
+            </p>
+        </div>
+
+        <div>
+            <h3 class="text-[9px] font-black text-white uppercase mb-2 tracking-wider border-b border-white/5 pb-1">02. The Broker Tax (10%)</h3>
+            <p class="text-[8px] text-slate-400 font-bold leading-relaxed uppercase">
+                All winning bets are subject to a <span class="text-rose-500">10% Broker Tax</span>. This fee is automatically deducted from the total payout and redirected to the Global App Pool to fund tournament rewards and milestones.
+            </p>
+            <div class="mt-2 bg-slate-950 p-2 rounded-lg border border-purple-500/20">
+                <p class="text-[7px] text-slate-500 font-black uppercase text-center">Example Payout</p>
+                <div class="flex justify-between items-center px-2 mt-1">
+                    <span class="text-[8px] text-white">Potential Win: 100 BP</span>
+                    <span class="text-[8px] text-rose-500">Tax (10%): -10 BP</span>
+                    <span class="text-[8px] text-emerald-400">Final Payout: 90 BP</span>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h3 class="text-[9px] font-black text-white uppercase mb-2 tracking-wider border-b border-white/5 pb-1">03. Eligibility & Odds</h3>
+            <ul class="space-y-2">
+                <li class="flex gap-3 bg-slate-950/30 p-2 rounded-xl border border-white/5">
+                    <span class="text-purple-500 font-black text-[8px]">3.1</span> 
+                    <span class="text-[8px] text-slate-400 uppercase font-bold">
+                        <span class="text-white">Conflict of Interest:</span> Hunters are strictly forbidden from betting on their own matches. Betting is only available for fixtures where you are not a participant.
+                    </span>
+                </li>
+                <li class="flex gap-3 bg-slate-950/30 p-2 rounded-xl border border-white/5">
+                    <span class="text-purple-500 font-black text-[8px]">3.2</span> 
+                    <span class="text-[8px] text-slate-400 uppercase font-bold">
+                        <span class="text-white">Dynamic Odds:</span> Odds are calculated in real-time based on Hunter performance, win streaks, and current BP value. Max Odds cap is set at <span class="text-white">2.5x</span>.
+                    </span>
+                </li>
+            </ul>
+        </div>
+    </div>
+    
+    <p class="text-[7px] text-slate-600 italic mt-4 text-center">
+        *All bets are final once confirmed. BP is deducted immediately upon placing a bet.
+    </p>
+</div>
 
             <div>
                 <h3 class="text-[9px] font-black text-white uppercase mb-3 tracking-wider border-b border-white/5 pb-1">02. Scoring Protocol</h3>
@@ -1098,6 +1151,76 @@
     </div>
 </div>
 
+<!-- BETTING MODAL -->
+<div id="modal-betting" class="fixed inset-0 z-[980] bg-slate-950/95 hidden flex items-center justify-center p-6 backdrop-blur-xl">
+    <div class="moving-border-purple rounded-[2.5rem] p-[1.5px] w-full max-w-sm animate-pop-in">
+        <div class="bg-slate-900 rounded-[2.4rem] p-6 relative border border-white/5">
+            
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                        <i data-lucide="banknote" class="w-5 h-5 text-purple-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-black text-sm uppercase italic tracking-widest">SLC Betting</h3>
+                        <p class="text-[7px] text-purple-400 font-bold uppercase">High Stakes Betting</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('modal-betting')" class="p-2 bg-white/5 rounded-full hover:bg-white/10 text-slate-400">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <!-- Match Header -->
+            <div class="flex justify-between items-center mb-6 px-2">
+                <span id="bet-h-name" class="text-[10px] font-black text-white uppercase">Home</span>
+                <span class="text-[8px] text-slate-500 font-bold uppercase">VS</span>
+                <span id="bet-a-name" class="text-[10px] font-black text-white uppercase">Away</span>
+            </div>
+            
+            <!-- Selection Grid -->
+            <div class="grid grid-cols-3 gap-2 mb-6">
+                <button onclick="selectBetOutcome('home')" id="btn-bet-home" class="bet-option-btn bg-slate-950 p-3 rounded-xl flex flex-col items-center gap-1 group">
+                    <span class="text-[8px] text-slate-500 font-bold uppercase group-hover:text-white">Home</span>
+                    <span id="odds-home" class="text-lg font-black text-purple-400">1.0x</span>
+                </button>
+                <button onclick="selectBetOutcome('draw')" id="btn-bet-draw" class="bet-option-btn bg-slate-950 p-3 rounded-xl flex flex-col items-center gap-1 group">
+                    <span class="text-[8px] text-slate-500 font-bold uppercase group-hover:text-white">Draw</span>
+                    <span id="odds-draw" class="text-lg font-black text-purple-400">1.0x</span>
+                </button>
+                <button onclick="selectBetOutcome('away')" id="btn-bet-away" class="bet-option-btn bg-slate-950 p-3 rounded-xl flex flex-col items-center gap-1 group">
+                    <span class="text-[8px] text-slate-500 font-bold uppercase group-hover:text-white">Away</span>
+                    <span id="odds-away" class="text-lg font-black text-purple-400">1.0x</span>
+                </button>
+            </div>
+            
+            <!-- Stake Input -->
+            <div class="bg-slate-950/50 p-4 rounded-2xl border border-white/5 mb-4">
+                <div class="flex justify-between mb-2">
+                    <span class="text-[8px] text-slate-500 font-bold uppercase">Your Wallet</span>
+                    <span id="bet-wallet-display" class="text-[8px] text-emerald-400 font-black">0 BP</span>
+                </div>
+                <div class="relative">
+                    <input type="number" id="bet-stake-input" oninput="updatePotentialReturn()" placeholder="Enter Stake..." class="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-purple-500">
+                    <span class="absolute right-3 top-3 text-[8px] text-slate-500 font-black pt-1">BP</span>
+                </div>
+                <p id="bet-limit-msg" class="text-[7px] text-rose-500 font-bold mt-2 uppercase hidden">Max Stake Exceeded (Limit: 20%)</p>
+                <p class="text-[7px] text-slate-600 mt-2 italic">Max Bet: <span id="bet-max-val" class="text-white font-bold">0</span> BP (20% of Total)</p>
+            </div>
+            
+            <!-- Return Preview -->
+            <div class="flex justify-between items-center mb-6 bg-purple-500/10 p-3 rounded-xl border border-purple-500/20">
+                <span class="text-[8px] text-purple-300 font-bold uppercase">Potential Win</span>
+                <span id="bet-return-display" class="text-xl font-black text-white">0 BP</span>
+            </div>
+            
+            <button onclick="placeBet()" id="btn-confirm-bet" class="w-full py-4 bg-purple-600 text-white font-black rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-purple-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                Confirm
+            </button>
+            
+        </div>
+    </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
