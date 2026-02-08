@@ -923,3 +923,63 @@ button[onclick="showStandingsPreview()"] {
     z-index: 30;
     border: 1px solid #020617;
 }
+
+/* --- MASTERCLASS AD STYLES --- */
+
+/* The "Spotlight" Background Effect */
+.ad-spotlight {
+    background: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+/* The 3D Floating Card Effect */
+.ad-card-visual {
+    background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    box-shadow: 
+        0 20px 40px -10px rgba(0,0,0,0.8),
+        0 0 20px rgba(245, 158, 11, 0.1),
+        inset 0 0 20px rgba(245, 158, 11, 0.05);
+    position: relative;
+    transform-style: preserve-3d;
+    animation: float-3d 6s ease-in-out infinite;
+}
+
+/* Shimmer Animation for the Card Surface */
+.ad-card-visual::after {
+    content: "";
+    position: absolute;
+    top: 0; left: -100%; width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    transform: skewX(-25deg);
+    animation: shimmer-swipe 4s infinite;
+}
+
+/* Animations */
+@keyframes float-3d {
+    0%, 100% { transform: translateY(0) rotateX(0) rotateY(0); }
+    50% { transform: translateY(-10px) rotateX(2deg) rotateY(-2deg); }
+}
+
+@keyframes shimmer-swipe {
+    0% { left: -100%; }
+    20% { left: 200%; }
+    100% { left: 200%; }
+}
+
+@keyframes text-glow-pulse {
+    0%, 100% { text-shadow: 0 0 10px rgba(245,158,11,0); }
+    50% { text-shadow: 0 0 20px rgba(245,158,11,0.5); }
+}
+
+.text-glow-gold {
+    animation: text-glow-pulse 3s infinite;
+}
+
+/* The "Cyber Grid" Background */
+.bg-grid-pattern {
+    background-size: 40px 40px;
+    background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+}
