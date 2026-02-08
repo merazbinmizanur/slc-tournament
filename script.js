@@ -1289,7 +1289,7 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
     
-    function updatePassUI(me) {
+     function updatePassUI(me) {
         const purchaseView = document.getElementById('pass-purchase-view');
         const activeView = document.getElementById('pass-active-view');
         const passSection = document.getElementById('pass-section');
@@ -1310,13 +1310,18 @@ function renderPlayerDashboard() {
             tag.innerText = `${me.passType} Pass Active`;
             tag.className = me.passType === 'premium' ? 'bg-gold-500/10 text-gold-500' : 'bg-blue-500/10 text-blue-500';
             
-            // Match calculation logic
-            const p1Played = state.matches.filter(m => m.phase === 1 && m.status === 'played').length;
-            const p2Played = state.matches.filter(m => m.phase === 2 && m.status === 'played').length;
-            const totalLeft = (4 - p1Played) + (5 - p2Played);
+            // --- UPDATED DYNAMIC MATCH CALCULATION ---
+            // Instead of hardcoded subtraction (4-p1), we count actual scheduled matches for this user
+            const myID = localStorage.getItem('slc_user_id');
+            const matchesRemaining = state.matches.filter(m => 
+                (m.homeId === myID || m.awayId === myID) && 
+                m.status === 'scheduled'
+            ).length;
             
             const remainingTag = document.getElementById('matches-remaining-tag');
-            if (remainingTag) remainingTag.innerText = `${totalLeft} Matches Left`;
+            if (remainingTag) {
+                remainingTag.innerText = `${matchesRemaining} Matches Left`;
+            }
             
             if (round < 10) {
                 const nextReward = PASS_REWARDS[me.passType][round];
@@ -1329,6 +1334,7 @@ function renderPlayerDashboard() {
             activeView.classList.add('hidden');
         }
     }
+
 }
 
 
@@ -1628,19 +1634,28 @@ async function saveMatchResult() {
                     bounty: firebase.firestore.FieldValue.increment(passBountyGain)
                 };
 
-                if (reward.type === 'bp') {
-                    let bpBonus = 0;
-                    if (winnerData.passType === 'premium') {
-                        if ([2, 4, 7].includes(nextRound)) bpBonus = 50;
-                        else if (nextRound === 9) bpBonus = 100;
-                        else bpBonus = 10;
-                    } else {
-                        bpBonus = [6, 8, 9].includes(nextRound) ? 20 : 10;
-                    }
-                    passUpdates['bounty'] = firebase.firestore.FieldValue.increment(config.rebate + bpBonus);
-                    passBountyGain += bpBonus;
-                    rewardDesc += ` & +${bpBonus} Bonus`;
-                } 
+
+if (reward.type === 'bp') {
+    let bpBonus = 0;
+    const rNum = nextRound
+
+    if (winnerData.passType === 'premium') {
+        if (rNum === 2 || rNum === 4) bpBonus = 100;
+        else if (rNum === 7 || rNum === 9) bpBonus = 250;
+        else bpBonus = 10;
+    } else {
+        if ([2, 3, 4, 6, 7].includes(rNum)) bpBonus = 50;
+        else if (rNum === 8 || rNum === 9) bpBonus = 100;
+        else bpBonus = 10;
+    }
+    
+    // Calculate total gain (Rebate + Bonus)
+    const totalGain = config.rebate + bpBonus;
+    passUpdates['bounty'] = firebase.firestore.FieldValue.increment(totalGain);
+    passBountyGain = totalGain; 
+    rewardDesc += ` & +${bpBonus} Bonus (Total: ${totalGain} BP)`;
+}
+
                 else if (reward.type === 'item') {
                     passUpdates[`inventory.${reward.id}`] = firebase.firestore.FieldValue.increment(1);
                     rewardDesc += ` & Item: ${reward.id}`;
@@ -1833,7 +1848,54 @@ async function checkAndRewardMilestones(playerId) {
     }
 }
 
+/* --- NEW PASS PROMO LOGIC --- */
 
+let passPromoShownSession = false; // Prevents spamming every refresh
+
+function checkPassPromo() {
+    const myID = localStorage.getItem('slc_user_id');
+    if (!myID) return;
+    
+    const me = state.players.find(p => p.id === myID);
+    if (!me) return;
+    
+    if (me.passType) return;
+    
+    if (passPromoShownSession) return;
+    if (!document.getElementById('modal-match-alert').classList.contains('hidden')) {
+        return;
+    }
+    
+    // 4. Show the ad
+    setTimeout(() => {
+        const modal = document.getElementById('modal-pass-promo');
+        modal.classList.remove('hidden');
+        
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        
+        passPromoShownSession = true;
+    }, 1000);
+}
+
+function dismissPassPromo() {
+    document.getElementById('modal-pass-promo').classList.add('hidden');
+}
+
+function goToPassPage() {
+    dismissPassPromo();
+    // Navigate to Home Tab
+    switchTab('home');
+    // Scroll to top
+    const viewHome = document.getElementById('view-home');
+    if (viewHome) viewHome.scrollTop = 0;
+    
+    // Highlight the pass section slightly (optional visual cue)
+    const passSection = document.getElementById('pass-purchase-view');
+    if (passSection) {
+        passSection.classList.add('animate-pulse');
+        setTimeout(() => passSection.classList.remove('animate-pulse'), 2000);
+    }
+}
 
 // --- 9. GLOBAL UI RENDERERS ---
 
@@ -1884,9 +1946,6 @@ function renderLeaderboard() {
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-
-
-
 
 
 // --- [NEW] BULK SCHEDULING LOGIC ---
@@ -4270,8 +4329,16 @@ function refreshUI() {
         renderBrokerBoard(); 
         renderPlayerDashboard();
         renderNewsTicker();
+        const matchAlertIsOpen = checkPriorityMatches();
+        if (!matchAlertIsOpen) {
+        checkPassPromo();
+    }
         checkPriorityMatches(); 
-
+// Add this check immediately after
+const isMatchAlertOpen = !document.getElementById('modal-match-alert').classList.contains('hidden');
+if (!isMatchAlertOpen) {
+        checkPassPromo();
+    }
         // Refresh Lucide icons to ensure new header elements render correctly
         if (typeof lucide !== 'undefined') lucide.createIcons();
 
@@ -4299,48 +4366,46 @@ function checkTournamentWinner() {
 // --- PRIORITY MATCH ALERT SYSTEM ---
 
 function checkPriorityMatches() {
-    // 1. Prevent showing if already shown this session or if user is Admin
-    if (state.matchAlertShown || state.isAdmin) return;
-
-    const myID = localStorage.getItem('slc_user_id');
-    if (!myID) return;
-
-    // 2. Find Pending Matches
-    // We look for: Status = Scheduled AND (Home = Me OR Away = Me)
-    const pendingMatches = state.matches.filter(m => 
-        m.status === 'scheduled' && 
-        (m.homeId === myID || m.awayId === myID) &&
-        m.deadline // Must have a deadline set
-    );
-
-    if (pendingMatches.length === 0) return;
-
-    // 3. Sort by Urgency (Closest Deadline First)
-    pendingMatches.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    // 1. If already shown or Admin, return false
+    if (state.matchAlertShown || state.isAdmin) return false;
     
-    // 4. Pick the most urgent match
+    const myID = localStorage.getItem('slc_user_id');
+    if (!myID) return false;
+    
+    // 2. Find Pending Matches
+    const pendingMatches = state.matches.filter(m =>
+        m.status === 'scheduled' &&
+        (m.homeId === myID || m.awayId === myID) &&
+        m.deadline
+    );
+    
+    if (pendingMatches.length === 0) return false;
+    
+    // 3. Sort & Setup Urgent Match
+    pendingMatches.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
     const urgentMatch = pendingMatches[0];
     
-    // 5. Populate Data
+    // Populate Data
     const opponentId = urgentMatch.homeId === myID ? urgentMatch.awayId : urgentMatch.homeId;
     const opponent = state.players.find(p => p.id === opponentId);
-    const opName = opponent ? opponent.name : "Unknown Rival";
+    
+    document.getElementById('alert-opponent-name').innerText = opponent ? opponent.name : "Unknown Rival";
+    document.getElementById('alert-phase-badge').innerText = `PHASE ${urgentMatch.phase} • ROUND ${urgentMatch.round || 1}`;
     
     // Format Date
     const d = new Date(urgentMatch.deadline);
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-    document.getElementById('alert-opponent-name').innerText = opName;
-    document.getElementById('alert-phase-badge').innerText = `PHASE ${urgentMatch.phase} • ROUND ${urgentMatch.round || 1}`;
     document.getElementById('alert-deadline-text').innerText = `${dateStr} @ ${timeStr}`;
-
-    // 6. Start Live Countdown
-    startAlertCountdown(urgentMatch.deadline);
-
-    // 7. Show Modal
+    
+    // 4. Show Modal
+    if (typeof startAlertCountdown === 'function') startAlertCountdown(urgentMatch.deadline);
     document.getElementById('modal-match-alert').classList.remove('hidden');
-    state.matchAlertShown = true; // Mark as shown so it doesn't pop up again on this refresh
+    
+    state.matchAlertShown = true;
+    
+    // 5. CRITICAL FIX: Return TRUE so the system knows to wait!
+    return true;
 }
 
 function startAlertCountdown(deadlineISO) {
@@ -4374,8 +4439,14 @@ function startAlertCountdown(deadlineISO) {
 
 function dismissMatchAlert() {
     const modal = document.getElementById('modal-match-alert');
-    modal.classList.add('hidden'); // Just hide, don't remove animation classes so it works next time
-    if (alertInterval) clearInterval(alertInterval);
+    modal.classList.add('hidden');
+    
+    if (typeof alertInterval !== 'undefined') clearInterval(alertInterval);
+    
+    // Chain Reaction: Now that Match Alert is gone, trigger Pass Promo
+    setTimeout(() => {
+        checkPassPromo();
+    }, 500);
 }
 
 // --- ADMIN TOOL: MANUAL HISTORY OVERRIDE ---
@@ -4747,59 +4818,56 @@ function closeAllSections() {
 }
 
 // --- NEW FUNCTION: SHOW PASS REWARDS PREVIEW ---
+/* --- script.js: Update showPassPreview() --- */
+
 function showPassPreview(type) {
     const listContainer = document.getElementById('pass-reward-list');
     const titleEl = document.getElementById('pass-detail-title');
     const subtitleEl = document.getElementById('pass-detail-subtitle');
     const buyBtn = document.getElementById('btn-confirm-pass-buy');
     
-    if (!listContainer) return;
-    
     const config = PASS_CONFIG[type];
     const rewards = PASS_REWARDS[type];
     
-    titleEl.innerText = `${type.toUpperCase()} PHASE PASS`;
-    subtitleEl.innerText = `Price: 
-    ${config.cost} BP | Rebate: ${config.rebate} BP / Win`;
+    // Marketing Text Calculation
+    const promoText = type === 'premium' ?
+        "Only 200 BP to get 700+ BP & Elite Items!" :
+        "Only 100 BP to get 350+ BP & Tactical Gear!";
     
-    // Set the button to the actual purchase function
-    buyBtn.onclick = () => {
-        closeModal('modal-pass-details');
-        buyPass(type);
-    };
-    buyBtn.className = `w-full py-4 ${type === 'premium' ? 'bg-gold-600 shadow-gold-600/20' : 'bg-blue-600 shadow-blue-600/20'} text-white font-black rounded-2xl text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all`;
+    titleEl.innerHTML = `${type.toUpperCase()} PHASE PASS <br> <span class="text-[7px] text-emerald-400 animate-pulse">${promoText}</span>`;
+    
+    subtitleEl.innerText = `Cost: ${config.cost} BP | Win Rebate: ${config.rebate} BP`;
+    
+    buyBtn.onclick = () => { closeModal('modal-pass-details');
+        buyPass(type); };
     
     listContainer.innerHTML = '';
-    
     rewards.forEach((item, index) => {
         let rewardName = "";
         let rewardIcon = "gift";
         let colorClass = "text-slate-400";
-        let bgClass = "bg-white/5";
+        const rNum = index + 1;
         
         if (item.type === 'item') {
-    const itemInfo = SHOP_ITEMS[item.id];
-    rewardName = `Tactical ${itemInfo.name}`;
-    rewardIcon = itemInfo.icon;
-    colorClass = "text-emerald-400";
-} else if (item.type === 'bp') {
-    let amount = 0;
-    if (type === 'premium') {
-        // Premium: 2nd(idx 1), 4th(idx 3), 7th(idx 6) = 50BP | 9th(idx 8) = 100BP | Else 10BP
-        if (index === 1 || index === 3 || index === 6) {
-            amount = 50;
-        } else if (index === 8) {
-            amount = 100;
-        } else {
-            amount = 10;
-        }
-    } else {
-        amount = (index === 5 || index === 7 || index === 8) ? 20 : 10;
-    }
-    rewardName = `+${amount} BP Bonus`;
-    rewardIcon = "coins";
-    colorClass = "text-gold-500";
-} else if (item.type === 'badge') {
+            const itemInfo = SHOP_ITEMS[item.id];
+            rewardName = `Tactical ${itemInfo.name}`;
+            rewardIcon = itemInfo.icon;
+            colorClass = "text-emerald-400";
+        } else if (item.type === 'bp') {
+            let amount = 0;
+            if (type === 'premium') {
+                if (rNum === 2 || rNum === 4) amount = 100;
+                else if (rNum === 7 || rNum === 9) amount = 250;
+                else amount = 10;
+            } else {
+                if ([2, 3, 4, 6, 7].includes(rNum)) amount = 50;
+                else if (rNum === 8 || rNum === 9) amount = 100;
+                else amount = 10;
+            }
+            rewardName = `+${amount} BP Bonus`;
+            rewardIcon = "coins";
+            colorClass = "text-gold-500";
+        } else if (item.type === 'badge') {
             rewardName = `Title: ${item.id}`;
             rewardIcon = "award";
             colorClass = "text-blue-400";
@@ -4810,17 +4878,16 @@ function showPassPreview(type) {
         }
         
         listContainer.innerHTML += `
-            <div class="flex items-center gap-3 p-3 ${bgClass} border border-white/5 rounded-2xl">
+            <div class="flex items-center gap-3 p-3 bg-white/5 border border-white/5 rounded-2xl">
                 <div class="w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center font-black text-[10px] text-slate-500 border border-white/5">
-                    ${index + 1}
+                    ${rNum}
                 </div>
                 <div class="flex-1">
                     <p class="text-[6px] text-slate-500 font-bold uppercase tracking-widest">Match Win Reward</p>
                     <p class="text-[9px] font-black text-white uppercase">${rewardName}</p>
                 </div>
                 <i data-lucide="${rewardIcon}" class="w-4 h-4 ${colorClass}"></i>
-            </div>
-        `;
+            </div>`;
     });
     
     openModal('modal-pass-details');
