@@ -25,6 +25,24 @@ const P2_LIMIT_STD = 2;
 const STARTING_BOUNTY = 500;
 const BETTING_MAX_STAKE_PERCENT = 0.20; // 20% Limit
 const BETTING_ODDS_CAP = 2.50; // Max Odds 2.5x
+const PASS_CONFIG = {
+    standard: { cost: 100, rebate: 10, totalRounds: 10 },
+    premium: { cost: 200, rebate: 20, totalRounds: 10 }
+};
+
+const PASS_REWARDS = {
+    standard: [
+        { type: 'item', id: 'scout' }, { type: 'bp' }, { type: 'bp' }, { type: 'bp' },
+        { type: 'item', id: 'privacy' }, { type: 'bp' }, { type: 'bp' }, { type: 'bp' },
+        { type: 'bp' }, { type: 'item', id: 'multiplier' }
+    ],
+    premium: [
+        { type: 'item', id: 'insurance' }, { type: 'bp' }, { type: 'item', id: 'scout' }, 
+        { type: 'bp' }, { type: 'badge', id: 'Elite Raider' }, { type: 'item', id: 'privacy' },
+        { type: 'bp' }, { type: 'item', id: 'multiplier' }, { type: 'bp' }, { type: 'vault' }
+    ]
+};
+
 // --- SHOP CONFIGURATION ---
 const SHOP_ITEMS = {
     insurance: { 
@@ -137,37 +155,55 @@ function calculateWinStreak(playerId) {
     return streak;
 }
 
- 
 function getAvatarUI(p, w="w-8", h="h-8", text="text-xs") {
     if (!p) return `<div class="${w} ${h} rounded-full bg-slate-800 border border-white/5"></div>`;
     
     const initial = (p.name || "U").charAt(0).toUpperCase();
     const isOnFire = (p.currentStreak || 0) >= 3;
+    
+    // Check for Pass Status
+    const hasStandard = p.passType === 'standard';
+    const hasPremium = p.passType === 'premium';
+    const passClass = hasPremium ? 'avatar-pass-premium' : (hasStandard ? 'avatar-pass-standard' : '');
+    
+    // Pass Badge Icon - UPDATED: Standard now shows Silver Crown
+    let passIcon = '';
+    if (hasPremium) {
+        // Gold Crown
+        passIcon = `<div class="pass-badge-icon bg-gold-500"><i data-lucide="crown" class="w-[7px] h-[7px] text-slate-950 fill-current"></i></div>`;
+    } else if (hasStandard) {
+        // Silver Crown
+        passIcon = `<div class="pass-badge-icon bg-silver-500"><i data-lucide="crown" class="w-[7px] h-[7px] text-slate-800 fill-current"></i></div>`;
+    }
 
     // Inner Content (Image or Initials)
     let innerContent = '';
     if (p.avatar) {
         innerContent = `
-        <img src="${p.avatar}" class="w-full h-full rounded-full object-cover border border-white/10 bg-slate-800" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-        <div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 hidden absolute inset-0 top-0 left-0">${initial}</div>`;
+        <img src="${p.avatar}" class="w-full h-full rounded-full object-cover border border-white/10 bg-slate-800 ${passClass}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 hidden absolute inset-0 top-0 left-0 ${passClass}">${initial}</div>`;
     } else {
-        innerContent = `<div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10">${initial}</div>`;
+        innerContent = `<div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center ${text} font-black text-white border border-white/10 ${passClass}">${initial}</div>`;
     }
 
-    // Wrapper Logic
+    // Wrapper Logic (Preserves existing Flame/Streak UI)
     if (isOnFire) {
         return `
         <div class="${w} ${h} avatar-flame-wrapper flex-shrink-0">
             ${innerContent}
+            ${passIcon}
             <div class="streak-fire-badge"><i data-lucide="flame" class="w-2 h-2 fill-orange-500"></i></div>
         </div>`;
     } else {
         return `
         <div class="${w} ${h} relative flex-shrink-0">
             ${innerContent}
+            ${passIcon}
         </div>`;
     }
 }
+
+
 
 /**
  * OFFICIAL RANKING ENGINE
@@ -431,6 +467,7 @@ function enterApp(identity) {
 // --- 4. REAL-TIME DATA SYNC ---
 
 function listenToCloud() {
+    // 1. Core Data Listeners
     db.collection("players").onSnapshot(snapshot => {
         state.players = snapshot.docs.map(doc => doc.data());
         refreshUI();
@@ -440,19 +477,19 @@ function listenToCloud() {
         refreshUI();
     });
     
-    // --- UPDATED SETTINGS LISTENER ---
+    // 2. Global Settings Listener
     db.collection("settings").doc("global").onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
             state.viewingDate = data.activeDate;
             state.phase3UnlockTime = data.phase3UnlockTime || null;
-            state.sponsorMessage = data.sponsorMessage || ""; 
-            // Capture Betting Status (Default to true if undefined)
-            state.bettingActive = data.bettingActive !== false; 
+            state.sponsorMessage = data.sponsorMessage || "";
+            state.bettingActive = data.bettingActive !== false;
             refreshUI();
         }
     });
-    // --- NEW: LISTEN TO MY BETS (To prevent double betting) ---
+    
+    // 3. Betting Activity Listener (Prevents duplicate bets)
     const myID = localStorage.getItem('slc_user_id');
     if (myID && !localStorage.getItem('slc_admin')) {
         db.collection("bets")
@@ -463,12 +500,28 @@ function listenToCloud() {
                     betSet.add(doc.data().matchId);
                 });
                 state.myBets = betSet;
-                refreshUI(); // Refresh to update buttons
+                refreshUI(); 
             });
     }
-    checkTournamentWinner();
-}
 
+    // 4. Winner Tracking
+    checkTournamentWinner();
+
+    // 5. HOUSE POOL REAL-TIME SYNC (The "The House" Economy)
+    db.collection("system").doc("pool").onSnapshot(doc => {
+        if (doc.exists) {
+            const poolData = doc.data();
+            const poolEl = document.getElementById('global-pool-amount');
+            if (poolEl) {
+                // Dynamically updates the UI text with the latest value from Firestore
+                poolEl.innerText = (poolData.poolBP || 0).toLocaleString();
+            }
+        } else {
+            // Auto-initialization if document is missing in Firebase
+            db.collection("system").doc("pool").set({ poolBP: 0 }, { merge: true });
+        }
+    });
+}
 
 // [UPDATED] checkPhaseLocks: Handles Phase 3 Countdown & Professional Text
 let p3Interval = null; // Variable to hold the timer reference
@@ -815,6 +868,77 @@ async function respondToChallenge(matchId, action) {
 }
 
 
+async function buyPass(type) {
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const cost = PASS_CONFIG[type].cost;
+    
+    if (me.passType) return notify("Pass already active", "alert-circle");
+    if (me.bounty < cost) return notify("Insufficient BP", "lock");
+    
+    askConfirm(`Purchase ${type.toUpperCase()} Pass for ${cost} BP?`, async () => {
+        try {
+            const batch = db.batch();
+            const playerRef = db.collection("players").doc(myID);
+            const statsRef = db.collection("settings").doc("pass_stats"); // Ledger Reference
+            const poolRef = db.collection("system").doc("pool");
+
+            // 1. Deduct from Player
+            batch.update(playerRef, {
+                bounty: firebase.firestore.FieldValue.increment(-cost),
+                passType: type,
+                passRound: 0,
+                passActive: true
+            });
+            
+            [span_0](start_span)// 2. Update Ledger Revenue[span_0](end_span)
+            batch.set(statsRef, {
+                total_revenue: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true });
+
+            // 3. Update Global House Pool
+            batch.set(poolRef, {
+                poolBP: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true });
+            
+            await batch.commit();
+            
+            logTransaction(myID, -cost, 'System', `${type} Pass Purchase`);
+            notify("Pass Activated!", "check-circle");
+            
+            setTimeout(() => location.reload(), 1000);
+        } catch (e) { 
+            console.error("Purchase Error:", e);
+            notify("Purchase failed", "x"); 
+        }
+    });
+}
+
+
+
+async function syncPassLedgerLegacy() {
+    notify("Syncing Ledger...", "refresh-cw");
+    let totalRev = 0;
+    
+    // 1. Calculate Revenue from existing players
+    state.players.forEach(p => {
+        if (p.passType === 'premium') totalRev += 250;
+        else if (p.passType === 'standard') totalRev += 100;
+    });
+
+    // 2. Update the cloud ledger
+    try {
+        await db.collection("settings").doc("pass_stats").set({
+            total_revenue: totalRev
+        }, { merge: true });
+        
+        notify("Ledger Synced Successfully!", "check-circle");
+    } catch (e) {
+        console.error(e);
+        notify("Sync Failed", "x-circle");
+    }
+}
+
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
 function renderPlayerDashboard() {
@@ -960,6 +1084,25 @@ function renderPlayerDashboard() {
             <div class="admin-tool space-y-6 mt-8 pt-8 border-t border-white/5">
                 <h2 class="text-[10px] font-black text-rose-500 uppercase text-center tracking-[0.4em] italic">Command Center</h2>
                 
+                <div class="moving-border-purple p-[1px] rounded-[2.1rem] shadow-xl mb-6">
+                    <div class="bg-slate-900 rounded-[2rem] p-5">
+                        <h3 class="text-purple-400 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <i data-lucide="bar-chart-3" class="w-3 h-3"></i> Pass Financial Ledger
+                        </h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-950 p-3 rounded-xl border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-black">Pass Revenue</p>
+                                <p id="admin-pass-rev" class="text-sm font-black text-emerald-400">0 BP</p>
+                            </div>
+                            <div class="text-center bg-slate-950 p-3 rounded-xl border border-white/5">
+                                <p class="text-[7px] text-slate-500 uppercase font-black">Rewards Given</p>
+                                <p id="admin-pass-dist" class="text-sm font-black text-rose-400">0 BP</p>
+                            </div>
+                        </div>
+                        <p id="admin-pass-net" class="text-center text-[8px] font-black uppercase text-slate-400 mt-3"></p>
+                    </div>
+                </div>
+
                 <div class="moving-border p-[1px] rounded-[2.6rem] shadow-2xl">
                     <div class="bg-slate-900 rounded-[2.5rem] p-6">
                         <label class="block text-[8px] font-black text-blue-400 uppercase mb-3 tracking-widest">Global Match Date</label>
@@ -1033,15 +1176,13 @@ function renderPlayerDashboard() {
                 <button onclick="syncLegacyPurchases()" class="w-full py-4 mb-3 bg-gold-600/10 border border-gold-500/30 text-gold-500 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-gold-600 hover:text-white transition-all">
                     <i data-lucide="database" class="w-3 h-3 inline mr-2"></i> Sync Legacy Purchases
                 </button>
-<button onclick="forceRebuildHistory()" class="w-full py-4 mb-3 bg-purple-600/10 border border-purple-500/30 text-purple-400 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-purple-600 hover:text-white transition-all">
+                <button onclick="forceRebuildHistory()" class="w-full py-4 mb-3 bg-purple-600/10 border border-purple-500/30 text-purple-400 font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:bg-purple-600 hover:text-white transition-all">
                     <i data-lucide="history" class="w-3 h-3 inline mr-2"></i> Reconstruct All History
                 </button>
-                <!-- NEW: STOP/START BETTING BUTTON -->
-<button onclick="toggleBettingSystem()" class="w-full py-4 mb-3 ${state.bettingActive ? 'bg-rose-600/10 border-rose-500/30 text-rose-500 hover:bg-rose-600' : 'bg-emerald-600/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-600'} border font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:text-white transition-all">
-    <i data-lucide="${state.bettingActive ? 'ban' : 'power'}" class="w-3 h-3 inline mr-2"></i> 
-    ${state.bettingActive ? 'STOP BETTING SYSTEM' : 'ACTIVATE BETTING SYSTEM'}
-</button>
-<!-- END NEW BUTTON -->
+                <button onclick="toggleBettingSystem()" class="w-full py-4 mb-3 ${state.bettingActive ? 'bg-rose-600/10 border-rose-500/30 text-rose-500 hover:bg-rose-600' : 'bg-emerald-600/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-600'} border font-black text-[8px] uppercase tracking-[0.2em] rounded-xl hover:text-white transition-all">
+                    <i data-lucide="${state.bettingActive ? 'ban' : 'power'}" class="w-3 h-3 inline mr-2"></i> 
+                    ${state.bettingActive ? 'STOP BETTING SYSTEM' : 'ACTIVATE BETTING SYSTEM'}
+                </button>
                 <button onclick="askFactoryReset()" class="w-full py-4 text-rose-600 font-black text-[8px] uppercase tracking-[0.3em] opacity-30 hover:opacity-100 transition-opacity">Factory Reset Cloud</button>
                 
             </div>`;
@@ -1098,8 +1239,18 @@ function renderPlayerDashboard() {
                  </button>
             </div>`;
     }
-
+    // 1. INJECT THE HTML FIRST
+    container.innerHTML = html;
     
+    // 2. TRIGGER THE PASS UI (The code needs the HTML to exist first)
+    if (p) {
+        updatePassUI(p);
+    }
+    
+    // 3. INITIALIZE ICONS
+    if (window.lucide) {
+        lucide.createIcons();
+    }
     // Footer
     html += `
         <div class="text-center pt-6 pb-20">
@@ -1137,7 +1288,49 @@ function renderPlayerDashboard() {
     
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    function updatePassUI(me) {
+        const purchaseView = document.getElementById('pass-purchase-view');
+        const activeView = document.getElementById('pass-active-view');
+        const passSection = document.getElementById('pass-section');
+        
+        if (!purchaseView || !activeView) return; // Safety check
+
+        if (me && me.passType) {
+            purchaseView.classList.add('hidden');
+            activeView.classList.remove('hidden');
+            
+            const round = me.passRound || 0;
+            const progress = (round / 10) * 100;
+            
+            document.getElementById('current-round-text').innerText = round;
+            document.getElementById('pass-progress-bar').style.width = `${progress}%`;
+            
+            const tag = document.getElementById('active-pass-tag');
+            tag.innerText = `${me.passType} Pass Active`;
+            tag.className = me.passType === 'premium' ? 'bg-gold-500/10 text-gold-500' : 'bg-blue-500/10 text-blue-500';
+            
+            // Match calculation logic
+            const p1Played = state.matches.filter(m => m.phase === 1 && m.status === 'played').length;
+            const p2Played = state.matches.filter(m => m.phase === 2 && m.status === 'played').length;
+            const totalLeft = (4 - p1Played) + (5 - p2Played);
+            
+            const remainingTag = document.getElementById('matches-remaining-tag');
+            if (remainingTag) remainingTag.innerText = `${totalLeft} Matches Left`;
+            
+            if (round < 10) {
+                const nextReward = PASS_REWARDS[me.passType][round];
+                document.getElementById('next-reward-text').innerText = `Next: ${nextReward.id || '10 BP'}`;
+            } else {
+                document.getElementById('next-reward-text').innerText = `MAXED`;
+            }
+        } else {
+            purchaseView.classList.remove('hidden');
+            activeView.classList.add('hidden');
+        }
+    }
 }
+
 
 
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
@@ -1349,13 +1542,11 @@ async function saveMatchResult() {
                 
             for (const doc of oldBetsSnap.docs) {
                 const bet = doc.data();
-                // Revert payout if they won incorrectly
                 if (bet.status === 'won') {
                     batch.update(db.collection("players").doc(bet.userId), {
                         bounty: firebase.firestore.FieldValue.increment(-bet.potentialPayout)
                     });
                 }
-                // Reset to pending for re-calculation
                 batch.update(doc.ref, { status: 'pending', taxPaid: 0 });
             }
         }
@@ -1417,6 +1608,62 @@ async function saveMatchResult() {
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
+        // --- NEW PASS SYSTEM REWARD ENGINE (FIXED) ---
+        const winnerId = sH > sA ? m.homeId : (sA > sH ? m.awayId : null);
+        const winnerData = state.players.find(p => p.id === winnerId);
+
+        if (winnerId && winnerData && winnerData.passType) {
+            const currentRound = winnerData.passRound || 0;
+            
+            if (currentRound < 10) {
+                const nextRound = currentRound + 1;
+                const config = PASS_CONFIG[winnerData.passType];
+                const reward = PASS_REWARDS[winnerData.passType][nextRound - 1];
+
+                let passBountyGain = config.rebate; 
+                let rewardDesc = `Pass R-${nextRound}: +${config.rebate} BP`;
+                
+                let passUpdates = { 
+                    passRound: nextRound,
+                    bounty: firebase.firestore.FieldValue.increment(passBountyGain)
+                };
+
+                if (reward.type === 'bp') {
+                    let bpBonus = 0;
+                    if (winnerData.passType === 'premium') {
+                        if ([2, 4, 7].includes(nextRound)) bpBonus = 50;
+                        else if (nextRound === 9) bpBonus = 100;
+                        else bpBonus = 10;
+                    } else {
+                        bpBonus = [6, 8, 9].includes(nextRound) ? 20 : 10;
+                    }
+                    passUpdates['bounty'] = firebase.firestore.FieldValue.increment(config.rebate + bpBonus);
+                    passBountyGain += bpBonus;
+                    rewardDesc += ` & +${bpBonus} Bonus`;
+                } 
+                else if (reward.type === 'item') {
+                    passUpdates[`inventory.${reward.id}`] = firebase.firestore.FieldValue.increment(1);
+                    rewardDesc += ` & Item: ${reward.id}`;
+                }
+                else if (reward.type === 'badge') {
+                    passUpdates[`badges.${reward.id}`] = true;
+                    rewardDesc += ` & Title: ${reward.id}`;
+                }
+                else if (reward.type === 'vault') {
+                    passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
+                    rewardDesc += ` & Vault Key`;
+                }
+
+                batch.update(db.collection("players").doc(winnerId), passUpdates);
+                logTransaction(winnerId, passBountyGain, 'Pass Reward', rewardDesc);
+
+                batch.set(db.collection("settings").doc("pass_stats"), {
+                    total_distributed: firebase.firestore.FieldValue.increment(passBountyGain)
+                }, { merge: true });
+            }
+        }
+        // --- END PASS SYSTEM ENGINE ---
+
         // --- STEP 2: EVALUATE BETS (NEW SCORE) ---
         const betsSnap = await db.collection("bets") 
             .where("matchId", "==", m.id)
@@ -1430,7 +1677,7 @@ async function saveMatchResult() {
 
             if (isWin) {
                 const rawPayout = bet.potentialPayout; 
-                const brokerTax = Math.floor(rawPayout * 0.10); // 10% Winning Tax
+                const brokerTax = Math.floor(rawPayout * 0.10); 
                 const netPayout = rawPayout - brokerTax;
                 
                 batch.update(db.collection("players").doc(bet.userId), {
@@ -1444,7 +1691,6 @@ async function saveMatchResult() {
             }
         });
 
-        // CONSUME ITEMS
         const consumeItem = (pid, effectName) => {
             batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
         };
@@ -1453,7 +1699,6 @@ async function saveMatchResult() {
             if (aEff[eff]) consumeItem(m.awayId, eff);
         });
 
-        // UPDATE PLAYER STATS
         const updateStats = (id, bp, goals, isWin, isDraw, isLoss) => {
             batch.update(db.collection("players").doc(id), {
                 bounty: firebase.firestore.FieldValue.increment(bp),
@@ -1488,8 +1733,6 @@ async function saveMatchResult() {
         notify("Sync Error", "x-circle");
     }
 }
-
-
 
 
 
@@ -2846,48 +3089,53 @@ function renderShop() {
     const grid = document.getElementById('shop-grid');
     if (!grid) return;
     grid.innerHTML = '';
-
+    
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
-    if (!me) return; // Not logged in
-
-    // Initialize data containers
-    const inv = me.inventory || {};
-    const active = me.active_effects || {};
-    const history = me.purchase_history || {}; // NEW: Track lifetime purchases
-
+    if (!me) return; // Exit if user is not logged in
+    
+    // Initialize data from player object
+    const inv = me.inventory || {}; // Stock of items (Pass rewards go here)
+    const active = me.active_effects || {}; // Currently used effects
+    const history = me.purchase_history || {}; // Record of items bought with BP
+    
     Object.keys(SHOP_ITEMS).forEach(key => {
         const item = SHOP_ITEMS[key];
-        const isOwned = (inv[key] || 0) > 0;
+        const stockCount = inv[key] || 0; // Number of this item the player owns
         const isActive = active[key] || (key === 'vault_access' && me.vault_data?.amount > 0);
-        const hasBoughtEver = history[key] === true; // NEW: Check if bought ever
-
-        // Determine Button State
+        const hasBoughtBefore = history[key] === true;
+        
         let btnText = "PURCHASE";
-        let btnClass = "bg-transparent text-slate-500 border border-slate-700";
+        let btnClass = "bg-emerald-600 text-white shadow-lg shadow-emerald-900/20";
         let statusIcon = "";
         let cardOpacity = "opacity-100";
-
-        if (hasBoughtEver && !isActive && !isOwned) {
-            // Case: Bought before, consumed/used, and now forbidden
-            btnText = "SOLD OUT";
-            btnClass = "bg-slate-900/50 text-slate-600 border border-slate-800 cursor-not-allowed";
-            cardOpacity = "opacity-50 grayscale";
-        } else if (isActive) {
+        
+        // --- NEW PASS SYSTEM LOGIC ENGINE ---
+        
+        if (isActive) {
+            // Priority 1: Item is currently in use
             btnText = "ACTIVE";
             btnClass = "bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 cursor-default";
             statusIcon = `<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981] animate-pulse"></div>`;
-        } else if (isOwned) {
-            btnText = "ACTIVATE";
+        }
+        else if (stockCount > 0) {
+            // Priority 2: Player owns the item (from PASS or previous purchase)
+            // Even if "Sold Out" for buying, they can still ACTIVATE their inventory
+            btnText = stockCount > 1 ? `ACTIVATE (${stockCount})` : "ACTIVATE";
             btnClass = "bg-white text-slate-900 font-black shadow-[0_0_15px_rgba(255,255,255,0.3)] animate-pulse-slow";
         }
-
-        // Card HTML
+        else if (hasBoughtBefore) {
+            // Priority 3: Player already bought it with BP and has 0 stock left
+            btnText = "SOLD OUT";
+            btnClass = "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed";
+            cardOpacity = "opacity-50 grayscale";
+        }
+        
+        // Create the card element
         const card = document.createElement('div');
         card.className = `relative group cursor-pointer active:scale-95 transition-all ${cardOpacity}`;
-        // If sold out, clicking does nothing or shows modal with Sold Out info
         card.onclick = () => openShopItem(key);
-
+        
         card.innerHTML = `
             <div class="${item.border} p-[1px] rounded-[1.2rem] h-full">
                 <div class="bg-slate-900 rounded-[1.1rem] p-3 h-full flex flex-col items-center justify-between relative z-10">
@@ -2899,7 +3147,7 @@ function renderShop() {
                         <h4 class="text-[9px] font-black text-white uppercase tracking-wider">${item.name}</h4>
                         <p class="text-[8px] font-bold text-gold-500">${item.price} BP</p>
                     </div>
-                    <button class="w-full py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${btnClass}">
+                    <button class="w-full py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${btnClass}">
                         ${btnText}
                     </button>
                 </div>
@@ -2907,6 +3155,8 @@ function renderShop() {
         `;
         grid.appendChild(card);
     });
+    
+    // Re-initialize Lucide icons for the new elements
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -3947,7 +4197,6 @@ function renderTopScorers() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-// Update the refreshUI function to include the new leaderboard rendering:
 // --- UPDATE YOUR EXISTING REFRESH UI FUNCTION ---
 function refreshUI() {
     const rawID = localStorage.getItem('slc_user_id') || "";
@@ -3974,6 +4223,27 @@ function refreshUI() {
     const totalBP = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
     const poolEl = document.getElementById('total-pool-display');
     if (poolEl) poolEl.innerText = `POOL: ${totalBP.toLocaleString()} BP`;
+
+    // --- NEW: HEADER HUD DATA INJECTION ---
+    const headerAvatar = document.getElementById('header-user-avatar');
+    const phaseInd = document.getElementById('phase-indicator');
+    const idBadge = document.getElementById('user-id-badge');
+
+    if (headerAvatar && myPlayer) {
+        // Injects player photo into the right HUD wing
+        headerAvatar.innerHTML = getAvatarUI(myPlayer, "w-full", "h-full", "text-[10px]");
+    }
+
+    if (phaseInd) {
+        // Updates the P1/P2/P3 text in the central command core
+        phaseInd.innerText = `P${state.activePhase}`;
+    }
+
+    if (idBadge && myPlayer) {
+        // Displays masked ID in the right HUD module
+        idBadge.innerText = myPlayer.id;
+    }
+    // --------------------------------------
     
     checkPhaseLocks();
 
@@ -4002,14 +4272,13 @@ function refreshUI() {
         renderNewsTicker();
         checkPriorityMatches(); 
 
+        // Refresh Lucide icons to ensure new header elements render correctly
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
     } catch (err) {
         console.error("UI Render Error:", err);
     }
 }
-
-
-
-
 
 // [MOVED] checkTournamentWinner: Now completely outside and global
 function checkTournamentWinner() {
@@ -4477,8 +4746,83 @@ function closeAllSections() {
     if (dlBtn) dlBtn.classList.remove('hidden');
 }
 
-/**
- * Guideline: Ensure refreshUI calls the analytics render
- * Add this line inside your existing refreshUI() function:
- */
-// renderBettingAnalytics(); 
+// --- NEW FUNCTION: SHOW PASS REWARDS PREVIEW ---
+function showPassPreview(type) {
+    const listContainer = document.getElementById('pass-reward-list');
+    const titleEl = document.getElementById('pass-detail-title');
+    const subtitleEl = document.getElementById('pass-detail-subtitle');
+    const buyBtn = document.getElementById('btn-confirm-pass-buy');
+    
+    if (!listContainer) return;
+    
+    const config = PASS_CONFIG[type];
+    const rewards = PASS_REWARDS[type];
+    
+    titleEl.innerText = `${type.toUpperCase()} PHASE PASS`;
+    subtitleEl.innerText = `Price: 
+    ${config.cost} BP | Rebate: ${config.rebate} BP / Win`;
+    
+    // Set the button to the actual purchase function
+    buyBtn.onclick = () => {
+        closeModal('modal-pass-details');
+        buyPass(type);
+    };
+    buyBtn.className = `w-full py-4 ${type === 'premium' ? 'bg-gold-600 shadow-gold-600/20' : 'bg-blue-600 shadow-blue-600/20'} text-white font-black rounded-2xl text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all`;
+    
+    listContainer.innerHTML = '';
+    
+    rewards.forEach((item, index) => {
+        let rewardName = "";
+        let rewardIcon = "gift";
+        let colorClass = "text-slate-400";
+        let bgClass = "bg-white/5";
+        
+        if (item.type === 'item') {
+    const itemInfo = SHOP_ITEMS[item.id];
+    rewardName = `Tactical ${itemInfo.name}`;
+    rewardIcon = itemInfo.icon;
+    colorClass = "text-emerald-400";
+} else if (item.type === 'bp') {
+    let amount = 0;
+    if (type === 'premium') {
+        // Premium: 2nd(idx 1), 4th(idx 3), 7th(idx 6) = 50BP | 9th(idx 8) = 100BP | Else 10BP
+        if (index === 1 || index === 3 || index === 6) {
+            amount = 50;
+        } else if (index === 8) {
+            amount = 100;
+        } else {
+            amount = 10;
+        }
+    } else {
+        amount = (index === 5 || index === 7 || index === 8) ? 20 : 10;
+    }
+    rewardName = `+${amount} BP Bonus`;
+    rewardIcon = "coins";
+    colorClass = "text-gold-500";
+} else if (item.type === 'badge') {
+            rewardName = `Title: ${item.id}`;
+            rewardIcon = "award";
+            colorClass = "text-blue-400";
+        } else if (item.type === 'vault') {
+            rewardName = "The Vault Key";
+            rewardIcon = "lock";
+            colorClass = "text-purple-400";
+        }
+        
+        listContainer.innerHTML += `
+            <div class="flex items-center gap-3 p-3 ${bgClass} border border-white/5 rounded-2xl">
+                <div class="w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center font-black text-[10px] text-slate-500 border border-white/5">
+                    ${index + 1}
+                </div>
+                <div class="flex-1">
+                    <p class="text-[6px] text-slate-500 font-bold uppercase tracking-widest">Match Win Reward</p>
+                    <p class="text-[9px] font-black text-white uppercase">${rewardName}</p>
+                </div>
+                <i data-lucide="${rewardIcon}" class="w-4 h-4 ${colorClass}"></i>
+            </div>
+        `;
+    });
+    
+    openModal('modal-pass-details');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
