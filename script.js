@@ -1289,52 +1289,73 @@ function renderPlayerDashboard() {
     if (state.isAdmin) renderAdminList();
     if (typeof lucide !== 'undefined') lucide.createIcons();
     
-     function updatePassUI(me) {
-        const purchaseView = document.getElementById('pass-purchase-view');
-        const activeView = document.getElementById('pass-active-view');
-        const passSection = document.getElementById('pass-section');
+function updatePassUI(me) {
+    const purchaseView = document.getElementById('pass-purchase-view');
+    const activeView = document.getElementById('pass-active-view');
+    
+    if (!purchaseView || !activeView) return;
+
+    if (me && me.passType) {
+        purchaseView.classList.add('hidden');
+        activeView.classList.remove('hidden');
         
-        if (!purchaseView || !activeView) return; // Safety check
+        const round = me.passRound || 0;
+        const progress = (round / 10) * 100;
+        
+        document.getElementById('current-round-text').innerText = round;
+        document.getElementById('pass-progress-bar').style.width = `${progress}%`;
+        
+        const tag = document.getElementById('active-pass-tag');
+        tag.innerText = `${me.passType} Pass Active`;
+        tag.className = me.passType === 'premium' ? 'bg-gold-500/10 text-gold-500' : 'bg-blue-500/10 text-blue-500';
+        
+        const myID = localStorage.getItem('slc_user_id');
+        const matchesRemaining = state.matches.filter(m => 
+            (m.homeId === myID || m.awayId === myID) && 
+            m.status === 'scheduled'
+        ).length;
+        
+        const remainingTag = document.getElementById('matches-remaining-tag');
+        if (remainingTag) remainingTag.innerText = `${matchesRemaining} Matches Left`;
+        
+        if (round < 10) {
+            const nextReward = PASS_REWARDS[me.passType][round];
+            let displayReward = "";
 
-        if (me && me.passType) {
-            purchaseView.classList.add('hidden');
-            activeView.classList.remove('hidden');
-            
-            const round = me.passRound || 0;
-            const progress = (round / 10) * 100;
-            
-            document.getElementById('current-round-text').innerText = round;
-            document.getElementById('pass-progress-bar').style.width = `${progress}%`;
-            
-            const tag = document.getElementById('active-pass-tag');
-            tag.innerText = `${me.passType} Pass Active`;
-            tag.className = me.passType === 'premium' ? 'bg-gold-500/10 text-gold-500' : 'bg-blue-500/10 text-blue-500';
-            
-            // --- UPDATED DYNAMIC MATCH CALCULATION ---
-            // Instead of hardcoded subtraction (4-p1), we count actual scheduled matches for this user
-            const myID = localStorage.getItem('slc_user_id');
-            const matchesRemaining = state.matches.filter(m => 
-                (m.homeId === myID || m.awayId === myID) && 
-                m.status === 'scheduled'
-            ).length;
-            
-            const remainingTag = document.getElementById('matches-remaining-tag');
-            if (remainingTag) {
-                remainingTag.innerText = `${matchesRemaining} Matches Left`;
+            if (nextReward.type === 'bp') {
+                let bpBonus = 0;
+                const nextRoundNum = round + 1;
+                const rebate = PASS_CONFIG[me.passType].rebate;
+
+                // Precision Reward Logic for Premium and Standard
+                if (me.passType === 'premium') {
+                    if (nextRoundNum === 2 || nextRoundNum === 4) bpBonus = 100;
+                    else if (nextRoundNum === 7 || nextRoundNum === 9) bpBonus = 250;
+                    else bpBonus = 10;
+                } else {
+                    if ([2, 3, 4, 6, 7].includes(nextRoundNum)) bpBonus = 50;
+                    else if (nextRoundNum === 8 || nextRoundNum === 9) bpBonus = 100;
+                    else bpBonus = 10;
+                }
+                // Show the sum of the rebate and the bonus
+                displayReward = `${rebate + bpBonus} BP`;
+            } else if (nextReward.type === 'item') {
+                displayReward = nextReward.id.toUpperCase();
+            } else if (nextReward.type === 'badge') {
+                displayReward = "NEW TITLE";
+            } else if (nextReward.type === 'vault') {
+                displayReward = "VAULT KEY";
             }
             
-            if (round < 10) {
-                const nextReward = PASS_REWARDS[me.passType][round];
-                document.getElementById('next-reward-text').innerText = `Next: ${nextReward.id || '10 BP'}`;
-            } else {
-                document.getElementById('next-reward-text').innerText = `MAXED`;
-            }
+            document.getElementById('next-reward-text').innerText = `Next: ${displayReward}`;
         } else {
-            purchaseView.classList.remove('hidden');
-            activeView.classList.add('hidden');
+            document.getElementById('next-reward-text').innerText = `MAXED`;
         }
+    } else {
+        purchaseView.classList.remove('hidden');
+        activeView.classList.add('hidden');
     }
-
+}
 }
 
 
