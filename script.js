@@ -1337,11 +1337,29 @@ async function saveMatchResult() {
     if (!isAuthorized) return notify("Unauthorized", "lock");
 
     try {
+        const batch = db.batch();
+
+        // --- STEP 1: REVERT STATS AND BETS IF ALREADY PLAYED ---
         if (m.status === 'played') {
             await revertMatchStats(m);
+
+            const oldBetsSnap = await db.collection("bets")
+                .where("matchId", "==", m.id)
+                .get();
+                
+            for (const doc of oldBetsSnap.docs) {
+                const bet = doc.data();
+                // Revert payout if they won incorrectly
+                if (bet.status === 'won') {
+                    batch.update(db.collection("players").doc(bet.userId), {
+                        bounty: firebase.firestore.FieldValue.increment(-bet.potentialPayout)
+                    });
+                }
+                // Reset to pending for re-calculation
+                batch.update(doc.ref, { status: 'pending', taxPaid: 0 });
+            }
         }
 
-        const batch = db.batch();
         let matchUpdate = { status: 'played' };
         let hBP = 0, aBP = 0;
 
@@ -1357,56 +1375,41 @@ async function saveMatchResult() {
         const hEff = hObj?.active_effects || {};
         const aEff = aObj?.active_effects || {};
 
-        // --- NEW: SANCTION LOGIC ---
         const sanctionPercent = getSanctionPercentage(m.deadline);
-        // Multipliers (Example: 20% late)
-        // Winner gets 80% (1 - 0.2)
-        // Loser pays 120% (1 + 0.2)
         const winMod = Math.max(0, 1 - (sanctionPercent / 100)); 
         const lossMod = 1 + (sanctionPercent / 100);
+        matchUpdate.sanctionApplied = sanctionPercent;
 
-        matchUpdate.sanctionApplied = sanctionPercent; // Save for record
-        // ---------------------------
-
-        // Helper: Calculate Points with Sanction Applied
         const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
             if (isWinner) {
-                let pts = baseWin * winMod; // Apply Sanction Cut
+                let pts = baseWin * winMod;
                 if (effectObj.multiplier) pts *= 2;
                 return Math.floor(pts);
             } else {
-                let pts = baseLoss * lossMod; // Apply Sanction Penalty
+                let pts = baseLoss * lossMod;
                 if (effectObj.insurance) pts /= 2;
                 return Math.floor(pts);
             }
         };
 
-        // BASE RULES
         let winPts = 0, lossPts = 0, drawPts = -30;
-
         if (m.phase === 3) {
             winPts = 300; lossPts = -250; drawPts = -100;
             matchUpdate.winnerId = sH > sA ? m.homeId : (sA > sH ? m.awayId : null);
-        } 
-        else if (m.phase === 2) {
+        } else if (m.phase === 2) {
             const pool = Math.floor((hObj.bounty + aObj.bounty) * (m.stakeRate / 100));
             winPts = pool; lossPts = -pool;
-        } 
-        else {
+        } else {
             winPts = 100; lossPts = -50;
         }
 
-        // CALCULATE FINAL BP
         if (sH > sA) { 
             hBP = calcPoints(true, winPts, lossPts, hEff);
             aBP = calcPoints(false, winPts, lossPts, aEff);
-        } 
-        else if (sA > sH) { 
+        } else if (sA > sH) { 
             hBP = calcPoints(false, winPts, lossPts, hEff);
             aBP = calcPoints(true, winPts, lossPts, aEff);
-        } 
-        else { 
-            // Draws are usually not sanctioned, but let's apply the Loss Mod to the penalty to be strict
+        } else { 
             hBP = Math.floor(drawPts * lossMod); 
             aBP = Math.floor(drawPts * lossMod); 
         }
@@ -1414,97 +1417,67 @@ async function saveMatchResult() {
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
-                // --- UPDATED BETTING PAYOUT ENGINE (10% BROKER TAX & HISTORY) ---
+        // --- STEP 2: EVALUATE BETS (NEW SCORE) ---
         const betsSnap = await db.collection("bets") 
             .where("matchId", "==", m.id)
-            .where("status", "==", "pending")
             .get();
         
+        let resultType = (sH > sA) ? 'home' : (sA > sH ? 'away' : 'draw');
+
         betsSnap.forEach(doc => {
             const bet = doc.data();
-            let isWin = false;
-            
-            let resultType = 'draw';
-            if (sH > sA) resultType = 'home';
-            else if (sA > sH) resultType = 'away';
-
-            if (bet.selection === resultType) isWin = true;
+            let isWin = (bet.selection === resultType);
 
             if (isWin) {
-                // Calculate Net Payout (Stake * Odds) - 10% Tax
                 const rawPayout = bet.potentialPayout; 
-                const brokerTax = Math.floor(rawPayout * 0.10); 
+                const brokerTax = Math.floor(rawPayout * 0.10); // 10% Winning Tax
                 const netPayout = rawPayout - brokerTax;
                 
-                // Update Player Wallet
                 batch.update(db.collection("players").doc(bet.userId), {
                     bounty: firebase.firestore.FieldValue.increment(netPayout)
                 });
 
-                // Log Winning Transaction
-                logTransaction(bet.userId, netPayout, 'Betting', `Bet Won! (Tax: ${brokerTax} BP added to Pool)`);
-
-                // Update Bet Status
+                logTransaction(bet.userId, netPayout, 'Betting', `Win: +${netPayout} BP (Tax: -${brokerTax})`);
                 batch.update(doc.ref, { status: 'won', taxPaid: brokerTax });
             } else {
-                batch.update(doc.ref, { status: 'lost' });
+                batch.update(doc.ref, { status: 'lost', taxPaid: 0 });
             }
         });
-
 
         // CONSUME ITEMS
         const consumeItem = (pid, effectName) => {
             batch.update(db.collection("players").doc(pid), { [`active_effects.${effectName}`]: false });
         };
-
-        if (hEff.insurance) consumeItem(m.homeId, "insurance");
-        if (hEff.multiplier) consumeItem(m.homeId, "multiplier");
-        if (hEff.privacy) consumeItem(m.homeId, "privacy");
-
-        if (aEff.insurance) consumeItem(m.awayId, "insurance");
-        if (aEff.multiplier) consumeItem(m.awayId, "multiplier");
-        if (aEff.privacy) consumeItem(m.awayId, "privacy");
+        ['insurance', 'multiplier', 'privacy'].forEach(eff => {
+            if (hEff[eff]) consumeItem(m.homeId, eff);
+            if (aEff[eff]) consumeItem(m.awayId, eff);
+        });
 
         // UPDATE PLAYER STATS
-        batch.update(db.collection("players").doc(m.homeId), {
-            bounty: firebase.firestore.FieldValue.increment(hBP),
-            goals: firebase.firestore.FieldValue.increment(sH),
-            wins: firebase.firestore.FieldValue.increment(sH > sA ? 1 : 0),
-            draws: firebase.firestore.FieldValue.increment(sH === sA ? 1 : 0),
-            losses: firebase.firestore.FieldValue.increment(sH < sA ? 1 : 0),
-            mp: firebase.firestore.FieldValue.increment(1)
-        });
-        batch.update(db.collection("players").doc(m.awayId), {
-            bounty: firebase.firestore.FieldValue.increment(aBP),
-            goals: firebase.firestore.FieldValue.increment(sA),
-            wins: firebase.firestore.FieldValue.increment(sA > sH ? 1 : 0),
-            draws: firebase.firestore.FieldValue.increment(sH === sA ? 1 : 0),
-            losses: firebase.firestore.FieldValue.increment(sA < sH ? 1 : 0),
-            mp: firebase.firestore.FieldValue.increment(1)
-        });
+        const updateStats = (id, bp, goals, isWin, isDraw, isLoss) => {
+            batch.update(db.collection("players").doc(id), {
+                bounty: firebase.firestore.FieldValue.increment(bp),
+                goals: firebase.firestore.FieldValue.increment(goals),
+                wins: firebase.firestore.FieldValue.increment(isWin ? 1 : 0),
+                draws: firebase.firestore.FieldValue.increment(isDraw ? 1 : 0),
+                losses: firebase.firestore.FieldValue.increment(isLoss ? 1 : 0),
+                mp: firebase.firestore.FieldValue.increment(1)
+            });
+        };
+
+        updateStats(m.homeId, hBP, sH, sH > sA, sH === sA, sH < sA);
+        updateStats(m.awayId, aBP, sA, sA > sH, sH === sA, sA < sH);
         
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         
         await batch.commit();
 
-        // Log Match Result Transactions
-        const hDesc = `Match vs ${aObj?.name || 'Opponent'}`;
-        const aDesc = `Match vs ${hObj?.name || 'Opponent'}`;
-        
-        const hCat = hBP > 0 ? 'Match Win' : (hBP < 0 ? 'Match Loss' : 'Match Draw');
-        const aCat = aBP > 0 ? 'Match Win' : (aBP < 0 ? 'Match Loss' : 'Match Draw');
+        logTransaction(m.homeId, hBP, 'Match', `vs ${aObj?.name || 'Opponent'}`);
+        logTransaction(m.awayId, aBP, 'Match', `vs ${hObj?.name || 'Opponent'}`);
 
-        logTransaction(m.homeId, hBP, hCat, hDesc);
-        logTransaction(m.awayId, aBP, aCat, aDesc);
-
-        if (sanctionPercent > 0) {
-            notify(`Sanction Applied: Reward -${sanctionPercent}%`, "alert-triangle");
-        } else {
-            notify("Result Saved!", "check-circle");
-        }
+        notify(m.status === 'played' ? "Result Corrected & Bets Synced!" : "Result Saved!", "check-circle");
         
         closeModal('modal-result');
-
         if (typeof checkAndRewardMilestones === 'function') {
             await checkAndRewardMilestones(m.homeId);
             await checkAndRewardMilestones(m.awayId);
@@ -1515,6 +1488,8 @@ async function saveMatchResult() {
         notify("Sync Error", "x-circle");
     }
 }
+
+
 
 
 
@@ -1760,11 +1735,11 @@ function startScheduleTicker() {
 // --- BETTING ENGINE ---
 
 function calculateMatchOdds(h, a) {
-    // 1. Calculate Strength Scores
-    // Formula: BP + (Wins * 50) + (Goals * 5) + (Streak * 20)
+    // 1. Calculate Strength Scores (Preserved Performance Logic)
     const getStrength = (p) => {
         if (!p) return 500;
-        const streak = calculateWinStreak(p.id);
+        const streak = (typeof calculateWinStreak === 'function') ? calculateWinStreak(p.id) : 0;
+        // Calculation based on Bounty (50%), Wins, Goals, and Win Streaks
         let score = (p.bounty * 0.5) + ((p.wins || 0) * 50) + ((p.goals || 0) * 5);
         if (streak > 2) score += (streak * 20);
         return Math.max(100, score);
@@ -1772,34 +1747,42 @@ function calculateMatchOdds(h, a) {
     
     const sH = getStrength(h);
     const sA = getStrength(a);
-    const total = sH + sA;
+    const totalStrength = sH + sA;
     
     // 2. Raw Win Probabilities
-    let probH = sH / total;
-    let probA = sA / total;
+    let probH = sH / totalStrength;
+    let probA = sA / totalStrength;
+    let probD = 0.20; // 20% Base Draw Probability
+
+    // 3. THE HOUSE EDGE (15% Overround/Vig)
+    // We divide by 1.15 to shrink the payout, ensuring the House keeps the difference.
+    const houseEdge = 1.15; 
     
-    // 3. Convert to Odds (1 / Probability)
-    // We add a 'House Edge' factor naturally by how we clamp
-    let oddsH = 1 / probH;
-    let oddsA = 1 / probA;
+    // 4. Convert to "House-Skewed" Odds
+    let oddsH = (1 / probH) / houseEdge;
+    let oddsA = (1 / probA) / houseEdge;
     
-    // 4. Draw Odds Logic (Closer teams = Lower Draw Odds)
+    // Draw Odds Refinement: Closer strength = Lower Draw Odds (more likely)
     const diff = Math.abs(sH - sA);
-    const maxDiff = 1000; // Arbitrary scaler
-    // If teams equal, draw is likely (~2.0). If very different, draw unlikely (~2.5 max)
-    let oddsD = 2.0 + (Math.min(diff, maxDiff) / maxDiff) * 0.5;
+    const maxDiff = 1000;
+    let baseOddsD = 2.0 + (Math.min(diff, maxDiff) / maxDiff) * 0.5;
+    let refinedOddsD = baseOddsD / houseEdge;
     
-    // 5. Apply CAP (Max 2.5x) and Floor (Min 1.1x)
+    // 5. Apply CAP (2.5x) and Floor (1.1x)
     const clamp = (val) => Math.min(BETTING_ODDS_CAP, Math.max(1.10, val));
     
     return {
         h: parseFloat(clamp(oddsH).toFixed(2)),
-        d: parseFloat(clamp(oddsD).toFixed(2)),
+        d: parseFloat(clamp(refinedOddsD).toFixed(2)),
         a: parseFloat(clamp(oddsA).toFixed(2))
     };
 }
 
+
+
 let activeBet = { mid: null, selection: null, odds: 0 };
+
+// --- UPDATED BETTING LIMIT LOGIC ---
 
 function openBettingModal(mid) {
     const m = state.matches.find(x => x.id === mid);
@@ -1812,33 +1795,88 @@ function openBettingModal(mid) {
     
     if (!me) return notify("Login required to bet", "lock");
     
-    // Recalculate odds live
+    // 1. Recalculate odds live
     const odds = calculateMatchOdds(h, a);
     
-    // UI Setup
-    document.getElementById('bet-h-name').innerText = h.name;
-    document.getElementById('bet-a-name').innerText = a.name;
-    
-    document.getElementById('odds-home').innerText = odds.h + 'x';
-    document.getElementById('odds-draw').innerText = odds.d + 'x';
-    document.getElementById('odds-away').innerText = odds.a + 'x';
-    
-    document.getElementById('bet-wallet-display').innerText = `${me.bounty} BP`;
-    
-    // Set Limits
-    const maxBet = Math.floor(me.bounty * BETTING_MAX_STAKE_PERCENT);
-    document.getElementById('bet-max-val').innerText = maxBet;
-    document.getElementById('bet-stake-input').max = maxBet;
-    document.getElementById('bet-stake-input').value = '';
-    
-    // Reset State
-    activeBet = { mid: mid, selection: null, oddsObj: odds };
-    document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
-    document.getElementById('btn-confirm-bet').disabled = true;
-    updatePotentialReturn();
-    
-    openModal('modal-betting');
+    // 2. FIXED LOOPHOLE CALCULATION:
+    // Calculate how much is already tied up in pending bets
+    let pendingStakes = 0;
+    // We filter the global bets state for the current user's pending bets
+    db.collection("bets")
+        .where("userId", "==", myID)
+        .where("status", "==", "pending")
+        .get()
+        .then(snapshot => {
+            snapshot.forEach(doc => {
+                pendingStakes += (doc.data().stake || 0);
+            });
+
+            // Total worth = Current BP + What is already bet
+            const totalWorth = me.bounty + pendingStakes;
+            const absoluteMaxStake = Math.floor(totalWorth * BETTING_MAX_STAKE_PERCENT);
+            const remainingAllowance = Math.max(0, absoluteMaxStake - pendingStakes);
+
+            // UI Setup
+            document.getElementById('bet-h-name').innerText = h.name;
+            document.getElementById('bet-a-name').innerText = a.name;
+            document.getElementById('odds-home').innerText = odds.h + 'x';
+            document.getElementById('odds-draw').innerText = odds.d + 'x';
+            document.getElementById('odds-away').innerText = odds.a + 'x';
+            document.getElementById('bet-wallet-display').innerText = `${me.bounty} BP`;
+            
+            // Set the dynamic remaining limit
+            document.getElementById('bet-max-val').innerText = remainingAllowance;
+            const stakeInput = document.getElementById('bet-stake-input');
+            stakeInput.max = remainingAllowance;
+            stakeInput.value = '';
+            
+            // Set State for the current transaction
+            activeBet = { 
+                mid: mid, 
+                selection: null, 
+                oddsObj: odds, 
+                allowedLimit: remainingAllowance // Store for validation
+            };
+
+            document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('btn-confirm-bet').disabled = true;
+            updatePotentialReturn();
+            
+            openModal('modal-betting');
+        });
 }
+
+function updatePotentialReturn() {
+    const stakeInput = document.getElementById('bet-stake-input');
+    const stake = parseInt(stakeInput.value) || 0;
+    const btn = document.getElementById('btn-confirm-bet');
+    const msg = document.getElementById('bet-limit-msg');
+    
+    // Use the limit calculated when the modal opened
+    const maxAllowed = activeBet.allowedLimit || 0;
+    
+    let potential = 0;
+    
+    if (stake > maxAllowed) {
+        msg.classList.remove('hidden');
+        msg.innerText = `Limit Reached: Max ${maxAllowed} BP remaining`;
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+        msg.classList.add('hidden');
+        if (activeBet.selection && stake > 0) {
+            potential = Math.floor(stake * activeBet.odds);
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    }
+    
+    document.getElementById('bet-return-display').innerText = `${potential} BP`;
+}
+
 
 function selectBetOutcome(selection) {
     activeBet.selection = selection;
@@ -1885,52 +1923,79 @@ function updatePotentialReturn() {
     document.getElementById('bet-return-display').innerText = `${potential} BP`;
 }
 
+
+// --- 2. PROFIT-OPTIMIZED BETTING EXECUTION (THE BURN) ---
 async function placeBet() {
-    const stake = parseInt(document.getElementById('bet-stake-input').value);
+    const stakeInput = document.getElementById('bet-stake-input');
+    const btn = document.getElementById('btn-confirm-bet'); // Reference to button
+    const stake = parseInt(stakeInput.value);
     const myID = localStorage.getItem('slc_user_id');
-    const me = state.players.find(p => p.id === myID); //
-    // --- NEW SAFETY CHECKS ---
-    if (!state.bettingActive) return notify("Betting System is currently closed.", "lock");
-    if (state.myBets.has(activeBet.mid)) return notify("You already have a bet on this match.", "alert-triangle");
-    // -------------------------
+
+    // 1. Basic Validations
+    if (!activeBet.selection) return notify("Select an outcome", "alert-circle");
+    if (isNaN(stake) || stake <= 0) return notify("Enter valid amount", "alert-circle");
+    if (stake > activeBet.allowedLimit) return notify("Limit reached (20%)", "lock");
     
-    if (!activeBet.selection || !stake) return;
-    
+    // 2. Prevent Double-Click Loophole
+    if (btn.disabled) return; 
+    btn.disabled = true;
+    btn.innerText = "Processing...";
+
     try {
         const batch = db.batch();
-        const betRef = db.collection("bets").doc();
         
-        // 1. Create Bet Ticket
-        batch.set(betRef, {
-            id: betRef.id,
+        // --- 3. ODDS REFRESH LOOPHOLE FIX ---
+        // We re-fetch the latest match data to re-calculate odds at the millisecond of betting
+        const m = state.matches.find(x => x.id === activeBet.mid);
+        const hObj = state.players.find(p => p.id === m.homeId);
+        const aObj = state.players.find(p => p.id === m.awayId);
+        
+        // Re-run the profit-optimized odds engine
+        const freshOdds = calculateMatchOdds(hObj, aObj);
+        const finalOdds = freshOdds[activeBet.selection[0]]; // h, d, or a
+
+        // --- 4. HOUSE REVENUE CALCULATION ---
+        const burnAmount = Math.floor(stake * 0.05); 
+        const effectiveStake = stake - burnAmount; 
+        const potentialReturn = Math.floor(effectiveStake * finalOdds);
+
+        // 5. Deduct full stake from player
+        batch.update(db.collection("players").doc(myID), {
+            bounty: firebase.firestore.FieldValue.increment(-stake)
+        });
+
+        // 6. Create the bet record
+        const betId = `BET_${Date.now()}_${myID.slice(0,3)}`;
+        batch.set(db.collection("bets").doc(betId), {
+            id: betId,
             userId: myID,
             matchId: activeBet.mid,
             selection: activeBet.selection,
             stake: stake,
-            odds: activeBet.odds,
-            potentialPayout: Math.floor(stake * activeBet.odds),
+            burnFee: burnAmount,
+            potentialPayout: potentialReturn,
+            oddsAtBet: finalOdds, // Record final odds used
             status: 'pending',
-            timestamp: Date.now()
+            ts: Date.now()
         });
-        
-        // 2. Deduct Funds Immediately
-        batch.update(db.collection("players").doc(myID), {
-            bounty: firebase.firestore.FieldValue.increment(-stake)
-        });
-        
+
+        // 7. Log the transaction
+        logTransaction(myID, -stake, 'Betting', `Stake: ${effectiveStake} BP | Fee: ${burnAmount} BP`);
+
         await batch.commit();
-        
-        // 3. UPDATED: Log to Transaction History
-        logTransaction(myID, -stake, 'Betting', `Wager placed on ${activeBet.selection.toUpperCase()} (Odds: ${activeBet.odds}x)`);
-        
-        notify("Bet Placed Successfully!", "banknote");
+        notify(`Bet Confirmed! ${burnAmount} BP Burned.`, "check-circle");
         closeModal('modal-betting');
         
     } catch (e) {
         console.error(e);
-        notify("Bet Failed", "x-circle");
+        notify("Betting failed", "x-circle");
+    } finally {
+        // Reset button state
+        btn.disabled = false;
+        btn.innerText = "Confirm";
     }
 }
+
 
 // [UPDATED] Render: Displays Round Number (e.g., PH-1 • R-1)
 function renderSchedule() {
@@ -3883,19 +3948,19 @@ function renderTopScorers() {
 }
 
 // Update the refreshUI function to include the new leaderboard rendering:
+// --- UPDATE YOUR EXISTING REFRESH UI FUNCTION ---
 function refreshUI() {
     const rawID = localStorage.getItem('slc_user_id') || "";
     const myID = rawID.toUpperCase();
     
-    // --- NEW: Calculate Streak for ALL players first ---
+    // Calculate streaks for all players
     state.players.forEach(p => {
         p.currentStreak = calculateWinStreak(p.id);
     });
-    // ---------------------------------------------------
 
     const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
     
-    // ... (Keep existing code for userBountyEl and totalBP) ...
+    // Update individual bounty display
     const userBountyEl = document.getElementById('user-bounty-display');
     if (userBountyEl) {
         if (state.isAdmin) {
@@ -3905,6 +3970,7 @@ function refreshUI() {
         }
     }
     
+    // Update global pool display
     const totalBP = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
     const poolEl = document.getElementById('total-pool-display');
     if (poolEl) poolEl.innerText = `POOL: ${totalBP.toLocaleString()} BP`;
@@ -3912,31 +3978,35 @@ function refreshUI() {
     checkPhaseLocks();
 
     try {
-        renderTop5Leaderboard(); // This will now pick up the streak data
+        renderTop5Leaderboard();
         
+        // --- ADD THIS LINE HERE ---
+        // This ensures the thin box on the home screen updates automatically
+        renderBettingAnalytics(); 
+
+        // Update Shop if visible
         if (document.getElementById('shop-section') && !document.getElementById('shop-section').classList.contains('hidden')) {
             renderShop();
         }
         
-        // ... (Keep the rest of the existing refreshUI logic) ...
+        // Update Scorers if visible
         if (document.getElementById('scorers-full-section') && !document.getElementById('scorers-full-section').classList.contains('hidden')) {
             renderTopScorers();
         }
+
         checkVaultStatus();
         renderSchedule();
         renderEliteBracket();
         renderBrokerBoard(); 
         renderPlayerDashboard();
         renderNewsTicker();
-
-        // --- NEW: Trigger Priority Match Alert ---
-        // This checks if the logged-in user has a pending match with a deadline
         checkPriorityMatches(); 
 
     } catch (err) {
         console.error("UI Render Error:", err);
     }
 }
+
 
 
 
@@ -4068,27 +4138,20 @@ async function manualMarkAsSold(targetId, itemKey) {
 // ==========================================
 
 // 1. Helper to Save Log to Database
-async function logTransaction(playerId, amount, category, description) {
-    if (!playerId) return;
-    const ref = db.collection("players").doc(playerId);
-    
+function logTransaction(uid, amount, cat, desc) {
+    const pRef = db.collection("players").doc(uid);
     const logEntry = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         ts: Date.now(),
-        amount: parseInt(amount),
-        cat: category, // e.g., 'Match', 'Shop', 'Vault', 'Bonus'
-        desc: description
+        amount: amount, // Positive for earnings, negative for expenses
+        cat: cat, // 'Betting', 'Match', 'Shop', etc.
+        desc: desc
     };
     
-    // Use arrayUnion to add to the list
-    try {
-        await ref.update({
-            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
-        });
-        console.log("Transaction logged for " + playerId);
-    } catch (e) {
-        console.error("Log Error:", e);
-    }
+    // This ensures the array is updated correctly in Firestore
+    pRef.update({
+        bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
+    });
 }
 
 // 2. Render the History Modal
@@ -4300,3 +4363,122 @@ async function toggleBettingSystem() {
         }
     });
 }
+
+// ==========================================
+// BETTING ANALYTICS & LEDGER SYSTEM
+// ==========================================
+
+function openBettingAnalytics() {
+    // Hide standard view components
+    document.getElementById('shop-box').classList.add('hidden');
+    document.getElementById('scorers-box').classList.add('hidden');
+    document.getElementById('betting-stats-box').classList.add('hidden');
+    document.getElementById('top5-leaderboard-container').classList.add('hidden');
+    document.getElementById('full-leaderboard-container').classList.add('hidden');
+    const dlBtn = document.querySelector('button[onclick="showStandingsPreview()"]');
+    if (dlBtn) dlBtn.classList.add('hidden');
+    
+    // Show analytics view
+    document.getElementById('betting-analytics-section').classList.remove('hidden');
+    renderBettingAnalytics();
+}
+
+async function renderBettingAnalytics() {
+    const phaseFilter = document.getElementById('filter-bet-phase')?.value || 'all';
+    const roundFilter = document.getElementById('filter-bet-round')?.value || 'all';
+
+    try {
+        const snapshot = await db.collection("bets").get();
+        const allBets = snapshot.docs.map(doc => doc.data());
+        
+        const filteredBets = allBets.filter(bet => {
+            const match = state.matches.find(m => m.id === bet.matchId);
+            if (!match) return false;
+            const matchPhase = (match.phase || "").toString();
+            const matchRound = (match.round || "").toString();
+            const matchesPhase = (phaseFilter === 'all' || matchPhase === phaseFilter);
+            const matchesRound = (roundFilter === 'all' || matchRound === roundFilter);
+            return matchesPhase && matchesRound;
+        });
+
+        // Initialize calculation variables
+        let totalBetVolume = 0;
+        let totalWonCount = 0;
+        let totalLostCount = 0;
+        let totalBPWonValue = 0;  
+        let totalBPLostValue = 0; 
+        let totalHouseRevenue = 0; 
+
+        filteredBets.forEach(b => {
+            const stake = parseInt(b.stake) || 0;
+            const burn = parseInt(b.burnFee) || 0; 
+            const tax = parseInt(b.taxPaid) || 0;
+            
+            totalBetVolume += stake;
+            
+            // House Profit = Fees collected upon entry + Tax collected upon win
+            totalHouseRevenue += (burn + tax);
+
+            if (b.status === 'won') {
+                totalWonCount++;
+                totalBPWonValue += (parseInt(b.potentialPayout) || 0);
+            } else if (b.status === 'lost') {
+                totalLostCount++;
+                totalBPLostValue += stake;
+            }
+        });
+
+        const avgBet = filteredBets.length > 0 ? Math.floor(totalBetVolume / filteredBets.length) : 0;
+
+        // Push data to the Full Ledger UI (New IDs Included)
+        if (document.getElementById('ledger-volume')) {
+            document.getElementById('ledger-volume').innerText = totalBetVolume.toLocaleString() + " BP";
+            document.getElementById('ledger-won').innerText = totalWonCount;
+            document.getElementById('ledger-lost').innerText = totalLostCount;
+            document.getElementById('ledger-avg').innerText = avgBet + " BP";
+            
+            document.getElementById('ledger-bp-won').innerText = totalBPWonValue.toLocaleString() + " BP";
+            document.getElementById('ledger-bp-lost').innerText = totalBPLostValue.toLocaleString() + " BP";
+            
+            // Push total house profit to UI
+            const houseProfitEl = document.getElementById('ledger-house-profit');
+            if (houseProfitEl) houseProfitEl.innerText = totalHouseRevenue.toLocaleString() + " BP";
+        }
+
+        // Update the "Thin Box" on the Home Screen
+        const homeBetEl = document.getElementById('stat-total-bet');
+        const homeTaxEl = document.getElementById('stat-total-tax');
+        if (homeBetEl) homeBetEl.innerText = totalBetVolume.toLocaleString() + " BP";
+        if (homeTaxEl) homeTaxEl.innerText = totalHouseRevenue.toLocaleString() + " BP"; 
+
+    } catch (e) {
+        console.error("Betting Analytics Error:", e);
+    }
+}
+
+
+
+
+/**
+ * Guideline: Update your closeAllSections function to restore the thin box
+ */
+function closeAllSections() {
+    // Standard section visibility resets
+    document.getElementById('shop-box').classList.remove('hidden');
+    document.getElementById('scorers-box').classList.remove('hidden');
+    document.getElementById('betting-stats-box').classList.remove('hidden'); // Show the thin box again
+    
+    document.getElementById('shop-section').classList.add('hidden');
+    document.getElementById('scorers-full-section').classList.add('hidden');
+    document.getElementById('betting-analytics-section').classList.add('hidden'); // Hide ledger
+    
+    document.getElementById('top5-leaderboard-container').classList.remove('hidden');
+    const dlBtn = document.querySelector('button[onclick="showStandingsPreview()"]');
+    if (dlBtn) dlBtn.classList.remove('hidden');
+}
+
+/**
+ * Guideline: Ensure refreshUI calls the analytics render
+ * Add this line inside your existing refreshUI() function:
+ */
+// renderBettingAnalytics(); 
