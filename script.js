@@ -108,6 +108,7 @@ let state = {
     matches: [], 
     activePhase: 1, 
     isAdmin: false, 
+    systemPool: 0,
     viewingDate: "",
     activeMatchId: null,
     brokerSubTab: 'hunts',
@@ -466,18 +467,25 @@ function enterApp(identity) {
 
 // --- 4. REAL-TIME DATA SYNC ---
 
-function listenToCloud() {
-    // 1. Core Data Listeners
-    db.collection("players").onSnapshot(snapshot => {
-        state.players = snapshot.docs.map(doc => doc.data());
-        refreshUI();
-    });
-    db.collection("matches").onSnapshot(snapshot => {
-        state.matches = snapshot.docs.map(doc => doc.data());
-        refreshUI();
-    });
+// --- 4. OPTIMIZED REAL-TIME DATA SYNC ---
+async function listenToCloud() {
+    const myID = localStorage.getItem('slc_user_id');
     
-    // 2. Global Settings Listener
+    // 1. Initial Load: Use 'get' instead of 'onSnapshot' for large collections
+    // This stops the app from reading the entire database every time any player makes a move.
+    try {
+        const pSnap = await db.collection("players").get();
+        state.players = pSnap.docs.map(doc => doc.data());
+        
+        const mSnap = await db.collection("matches").get();
+        state.matches = mSnap.docs.map(doc => doc.data());
+        
+        refreshUI();
+    } catch (e) {
+        console.error("Quota or Connection Error:", e);
+    }
+    
+    // 2. Global Settings Listener (Keep as onSnapshot - low read cost)
     db.collection("settings").doc("global").onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
@@ -485,13 +493,28 @@ function listenToCloud() {
             state.phase3UnlockTime = data.phase3UnlockTime || null;
             state.sponsorMessage = data.sponsorMessage || "";
             state.bettingActive = data.bettingActive !== false;
-            refreshUI();
+            // Target specific UI updates rather than a full global refresh
+            renderNewsTicker();
+            checkPhaseLocks();
         }
     });
     
-    // 3. Betting Activity Listener (Prevents duplicate bets)
-    const myID = localStorage.getItem('slc_user_id');
+    // 3. Selective Personal Listener (Crucial for real-time BP updates)
+    // Only listen for changes to YOUR specific document.
     if (myID && !localStorage.getItem('slc_admin')) {
+        db.collection("players").doc(myID).onSnapshot(doc => {
+            if (doc.exists) {
+                const updatedMe = doc.data();
+                const idx = state.players.findIndex(p => p.id === myID);
+                if (idx !== -1) state.players[idx] = updatedMe;
+                
+                // Update specific HUD elements immediately
+                const userBountyEl = document.getElementById('user-bounty-display');
+                if (userBountyEl) userBountyEl.innerText = `${updatedMe.bounty.toLocaleString()} BP`;
+            }
+        });
+        
+        // Betting Activity Listener
         db.collection("bets")
             .where("userId", "==", myID)
             .onSnapshot(snapshot => {
@@ -500,28 +523,42 @@ function listenToCloud() {
                     betSet.add(doc.data().matchId);
                 });
                 state.myBets = betSet;
-                refreshUI(); 
+                refreshUI();
             });
     }
-
-    // 4. Winner Tracking
+    
+    // 4. Winner Tracking (Global)
     checkTournamentWinner();
-
-    // 5. HOUSE POOL REAL-TIME SYNC (The "The House" Economy)
+    
+    // 5. HOUSE POOL REAL-TIME SYNC (UPDATED)
+    // This now calculates Total Economy = Player Wallets + House Pool
     db.collection("system").doc("pool").onSnapshot(doc => {
         if (doc.exists) {
             const poolData = doc.data();
-            const poolEl = document.getElementById('global-pool-amount');
+            
+            // A. Save House Balance to State (Crucial for calculations elsewhere)
+            state.systemPool = poolData.poolBP || 0;
+            
+            // B. Calculate Total Economy (All Players + House Pool)
+            const totalPlayerMoney = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
+            const totalEconomy = totalPlayerMoney + state.systemPool;
+            
+            // C. Update the Header Display with the Total Economy
+            const poolEl = document.getElementById('total-pool-display');
             if (poolEl) {
-                // Dynamically updates the UI text with the latest value from Firestore
-                poolEl.innerText = (poolData.poolBP || 0).toLocaleString();
+                poolEl.innerText = `Pool: ${totalEconomy.toLocaleString()}`;
             }
+            
+            // D. Trigger global refresh to ensure betting limits/shop logic updates based on new pool data
+            refreshUI();
+            
         } else {
-            // Auto-initialization if document is missing in Firebase
+            // Initialize if missing
             db.collection("system").doc("pool").set({ poolBP: 0 }, { merge: true });
         }
     });
 }
+
 
 // [UPDATED] checkPhaseLocks: Handles Phase 3 Countdown & Professional Text
 let p3Interval = null; // Variable to hold the timer reference
@@ -867,7 +904,6 @@ async function respondToChallenge(matchId, action) {
     }
 }
 
-
 async function buyPass(type) {
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
@@ -878,48 +914,59 @@ async function buyPass(type) {
     
     askConfirm(`Purchase ${type.toUpperCase()} Pass for ${cost} BP?`, async () => {
         try {
-            // 1. CRITICAL: Update the Player (Deduct Money & Give Pass)
-            // We do this in a Batch to ensure both happen or neither happens.
+            // 1. START ATOMIC BATCH
             const batch = db.batch();
             const playerRef = db.collection("players").doc(myID);
-
+            
+            // 2. Create the Transaction Log Object locally
+            const logEntry = {
+                id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                ts: Date.now(),
+                amount: -cost, // Negative because it is a cost
+                cat: 'System',
+                desc: `${type} Pass Purchase`
+            };
+            
+            // 3. CRITICAL UPDATE: Perform all player updates in ONE operation
+            // This adds the log to 'bp_logs' at the same time the money is taken.
             batch.update(playerRef, {
                 bounty: firebase.firestore.FieldValue.increment(-cost),
                 passType: type,
                 passRound: 0,
-                passActive: true
+                passActive: true,
+                // FIX: ArrayUnion ensures the log is added immediately to history
+                bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
             });
             
-            // Commit ONLY the player changes first
-            await batch.commit();
-
-            // 2. NON-CRITICAL: Update Global Stats (Fire and Forget)
-            // We run this *after* the purchase. If this fails (due to permissions), 
-            // the user still keeps their pass.
+            // 4. Update Global Stats & Pool (Included in Batch for safety)
             const statsRef = db.collection("settings").doc("pass_stats");
             const poolRef = db.collection("system").doc("pool");
-
-            // Attempt to update ledger (ignore errors)
-            statsRef.set({
-                total_revenue: firebase.firestore.FieldValue.increment(cost)
-            }, { merge: true }).catch(e => console.log("Ledger update skipped", e));
-
-            // Attempt to update pool (ignore errors)
-            poolRef.set({
-                poolBP: firebase.firestore.FieldValue.increment(cost)
-            }, { merge: true }).catch(e => console.log("Pool update skipped", e));
             
-            // 3. Log & Success Message
-            logTransaction(myID, -cost, 'System', `${type} Pass Purchase`);
+            // Update Revenue Ledger (Merge ensures we don't overwrite other fields)
+            batch.set(statsRef, {
+                total_revenue: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true });
+            
+            // Update Global Pool (Merge ensures we don't overwrite)
+            batch.set(poolRef, {
+                poolBP: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true });
+            
+            // 5. COMMIT ALL CHANGES
+            await batch.commit();
+            
+            // 6. Success Message & Reload
             notify("Pass Activated!", "check-circle");
             
             setTimeout(() => location.reload(), 1000);
-        } catch (e) { 
+            
+        } catch (e) {
             console.error("Purchase Error:", e);
-            notify("Purchase failed", "x"); 
+            notify("Purchase failed", "x");
         }
     });
 }
+
 
 
 async function syncPassLedgerLegacy() {
@@ -945,6 +992,61 @@ async function syncPassLedgerLegacy() {
     }
 }
 
+// --- NEW: AUTO-UPDATE ADMIN FINANCIAL LEDGER ---
+async function updateAdminPassStats() {
+    const revEl = document.getElementById('admin-pass-rev');
+    const distEl = document.getElementById('admin-pass-dist');
+    const netEl = document.getElementById('admin-pass-net');
+    
+    // Safety check: Exit if we aren't on the admin screen
+    if (!revEl || !distEl) return;
+    
+    try {
+        // 1. Get the Stats from Firestore
+        const doc = await db.collection("settings").doc("pass_stats").get();
+        let data = doc.exists ? doc.data() : { total_revenue: 0, total_distributed: 0 };
+        
+        // 2. SELF-HEALING LOGIC: 
+        // If Revenue is 0 but players exist, recalculate it from existing players
+        if ((!data.total_revenue || data.total_revenue === 0) && state.players.length > 0) {
+            console.log("Auto-correcting Ledger Revenue...");
+            let calculatedRev = 0;
+            
+            state.players.forEach(p => {
+                if (p.passType === 'standard') calculatedRev += 100; // PASS_CONFIG.standard.cost
+                if (p.passType === 'premium') calculatedRev += 200; // PASS_CONFIG.premium.cost
+            });
+            
+            // Update local variable for display
+            data.total_revenue = calculatedRev;
+            
+            // Save correction to database silently
+            db.collection("settings").doc("pass_stats").set({
+                total_revenue: calculatedRev
+            }, { merge: true });
+        }
+        
+        // 3. Update the UI
+        const revenue = data.total_revenue || 0;
+        const distributed = data.total_distributed || 0;
+        const net = revenue - distributed;
+        
+        revEl.innerText = `${revenue.toLocaleString()} BP`;
+        distEl.innerText = `${distributed.toLocaleString()} BP`;
+        
+        // Color coding for Net Profit
+        const color = net >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        const label = net >= 0 ? 'PROFIT' : 'DEFICIT';
+        
+        if (netEl) {
+            netEl.innerHTML = `NET ${label}: <span class="${color} text-sm ml-1">${net.toLocaleString()} BP</span>`;
+        }
+        
+    } catch (e) {
+        console.error("Ledger Update Error", e);
+        if (revEl) revEl.innerText = "Error";
+    }
+}
 
 // --- 6. PRO DASHBOARD (SETTINGS TAB) ---
 function renderPlayerDashboard() {
@@ -1292,8 +1394,12 @@ function renderPlayerDashboard() {
         }, 50);
     }
     
-    if (state.isAdmin) renderAdminList();
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+if (state.isAdmin) {
+    renderAdminList();
+    updateAdminPassStats(); // <--- NEW: Triggers the ledger update
+}
+
+if (typeof lucide !== 'undefined') lucide.createIcons();
     
 function updatePassUI(me) {
     const purchaseView = document.getElementById('pass-purchase-view');
@@ -1362,10 +1468,8 @@ function updatePassUI(me) {
         activeView.classList.add('hidden');
     }
 }
+
 }
-
-
-
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
 
 // [REPLACEMENT] Generator: Fixed 5 Rounds (Randomized)
@@ -1641,7 +1745,22 @@ async function saveMatchResult() {
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
-        // --- NEW PASS SYSTEM REWARD ENGINE (FIXED) ---
+        // --- NEW: POOL ADJUSTMENT FOR MATCH RESULTS ---
+        // If players gain net positive BP, Pool decreases. If players lose net BP, Pool increases.
+        // We invert the sum of hBP and aBP to adjust the pool.
+        const poolChange = -(hBP + aBP);
+        batch.update(db.collection("system").doc("pool"), {
+            poolBP: firebase.firestore.FieldValue.increment(poolChange)
+        });
+        // ---------------------------------------------
+
+        // --- BATCH LOG: Match Earnings (Moved inside batch flow) ---
+        // CRITICAL UPDATE: Pass 'batch' as the last argument
+        logTransaction(m.homeId, hBP, 'Match', `vs ${aObj?.name || 'Opponent'}`, batch);
+        logTransaction(m.awayId, aBP, 'Match', `vs ${hObj?.name || 'Opponent'}`, batch);
+
+
+        // --- NEW PASS SYSTEM REWARD ENGINE (UPDATED: FREE ITEMS) ---
         const winnerId = sH > sA ? m.homeId : (sA > sH ? m.awayId : null);
         const winnerData = state.players.find(p => p.id === winnerId);
 
@@ -1652,38 +1771,40 @@ async function saveMatchResult() {
                 const nextRound = currentRound + 1;
                 const config = PASS_CONFIG[winnerData.passType];
                 const reward = PASS_REWARDS[winnerData.passType][nextRound - 1];
-
-                let passBountyGain = config.rebate; 
+                
+                // 1. Base Rebate (Standard: 10, Premium: 20) - ALWAYS GIVEN
+                let passBountyGain = config.rebate;
                 let rewardDesc = `Pass R-${nextRound}: +${config.rebate} BP`;
                 
-                let passUpdates = { 
+                // Initialize updates with just the Round increase and Base Rebate
+                let passUpdates = {
                     passRound: nextRound,
                     bounty: firebase.firestore.FieldValue.increment(passBountyGain)
                 };
-
-
-if (reward.type === 'bp') {
-    let bpBonus = 0;
-    const rNum = nextRound
-
-    if (winnerData.passType === 'premium') {
-        if (rNum === 2 || rNum === 4) bpBonus = 100;
-        else if (rNum === 7 || rNum === 9) bpBonus = 250;
-        else bpBonus = 10;
-    } else {
-        if ([2, 3, 4, 6, 7].includes(rNum)) bpBonus = 50;
-        else if (rNum === 8 || rNum === 9) bpBonus = 100;
-        else bpBonus = 10;
-    }
-    
-    // Calculate total gain (Rebate + Bonus)
-    const totalGain = config.rebate + bpBonus;
-    passUpdates['bounty'] = firebase.firestore.FieldValue.increment(totalGain);
-    passBountyGain = totalGain; 
-    rewardDesc += ` & +${bpBonus} Bonus (Total: ${totalGain} BP)`;
-}
-
+                
+                // 2. Handle Specific Reward Types
+                if (reward.type === 'bp') {
+                    // BP Reward: Add Bonus on top of Rebate
+                    let bpBonus = 0;
+                    const rNum = nextRound;
+                    
+                    if (winnerData.passType === 'premium') {
+                        if ([2, 4].includes(rNum)) bpBonus = 100;
+                        else if ([7, 9].includes(rNum)) bpBonus = 250;
+                        else bpBonus = 10;
+                    } else {
+                        if ([2, 3, 4, 6, 7].includes(rNum)) bpBonus = 50;
+                        else if ([8, 9].includes(rNum)) bpBonus = 100;
+                        else bpBonus = 10;
+                    }
+                    
+                    const totalGain = config.rebate + bpBonus;
+                    passUpdates['bounty'] = firebase.firestore.FieldValue.increment(totalGain); // Update the bounty increment
+                    passBountyGain = totalGain;
+                    rewardDesc += ` & +${bpBonus} Bonus`;
+                }
                 else if (reward.type === 'item') {
+                    // ITEM Reward: 100% FREE. Just add to inventory.
                     passUpdates[`inventory.${reward.id}`] = firebase.firestore.FieldValue.increment(1);
                     rewardDesc += ` & Item: ${reward.id}`;
                 }
@@ -1695,10 +1816,23 @@ if (reward.type === 'bp') {
                     passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
                     rewardDesc += ` & Vault Key`;
                 }
+                
+                // --- NEW: DEDUCT PASS REWARDS FROM POOL ---
+                // Since user GAINS BP, the Pool must LOSE BP.
+                if (passBountyGain > 0) {
+                     batch.update(db.collection("system").doc("pool"), {
+                        poolBP: firebase.firestore.FieldValue.increment(-passBountyGain)
+                    });
+                }
+                // ------------------------------------------
 
+                // 3. Commit Pass Updates
                 batch.update(db.collection("players").doc(winnerId), passUpdates);
-                logTransaction(winnerId, passBountyGain, 'Pass Reward', rewardDesc);
-
+                
+                // 4. Log the Reward
+                logTransaction(winnerId, passBountyGain, 'Pass Reward', rewardDesc, batch);
+                
+                // 5. Update Admin Stats
                 batch.set(db.collection("settings").doc("pass_stats"), {
                     total_distributed: firebase.firestore.FieldValue.increment(passBountyGain)
                 }, { merge: true });
@@ -1725,11 +1859,22 @@ if (reward.type === 'bp') {
                 batch.update(db.collection("players").doc(bet.userId), {
                     bounty: firebase.firestore.FieldValue.increment(netPayout)
                 });
-
-                logTransaction(bet.userId, netPayout, 'Betting', `Win: +${netPayout} BP (Tax: -${brokerTax})`);
                 batch.update(doc.ref, { status: 'won', taxPaid: brokerTax });
+                
+                // CRITICAL UPDATE: Log Betting Win in Batch
+                logTransaction(bet.userId, netPayout, 'Betting', `Win: +${netPayout} BP (Tax: -${brokerTax})`, batch);
+
+                // --- NEW: PAY WINNINGS FROM POOL ---
+                // The House pays the winner, so Pool decreases.
+                batch.update(db.collection("system").doc("pool"), {
+                    poolBP: firebase.firestore.FieldValue.increment(-netPayout)
+                });
+                // ------------------------------------
+
             } else {
                 batch.update(doc.ref, { status: 'lost', taxPaid: 0 });
+                // Note: Losses were logged when the bet was PLACED
+                // Note: Pool already received the money when bet was placed. No action needed now.
             }
         });
 
@@ -1757,10 +1902,10 @@ if (reward.type === 'bp') {
         
         batch.update(db.collection("matches").doc(m.id), matchUpdate);
         
+        // --- FINAL COMMIT ---
         await batch.commit();
-
-        logTransaction(m.homeId, hBP, 'Match', `vs ${aObj?.name || 'Opponent'}`);
-        logTransaction(m.awayId, aBP, 'Match', `vs ${hObj?.name || 'Opponent'}`);
+        
+        // Removed external logTransaction calls as they are now inside the batch flow above
 
         notify(m.status === 'played' ? "Result Corrected & Bets Synced!" : "Result Saved!", "check-circle");
         
@@ -2259,17 +2404,17 @@ async function placeBet() {
     const btn = document.getElementById('btn-confirm-bet'); // Reference to button
     const stake = parseInt(stakeInput.value);
     const myID = localStorage.getItem('slc_user_id');
-
+    
     // 1. Basic Validations
     if (!activeBet.selection) return notify("Select an outcome", "alert-circle");
     if (isNaN(stake) || stake <= 0) return notify("Enter valid amount", "alert-circle");
     if (stake > activeBet.allowedLimit) return notify("Limit reached (20%)", "lock");
     
     // 2. Prevent Double-Click Loophole
-    if (btn.disabled) return; 
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.innerText = "Processing...";
-
+    
     try {
         const batch = db.batch();
         
@@ -2282,17 +2427,35 @@ async function placeBet() {
         // Re-run the profit-optimized odds engine
         const freshOdds = calculateMatchOdds(hObj, aObj);
         const finalOdds = freshOdds[activeBet.selection[0]]; // h, d, or a
-
+        
         // --- 4. HOUSE REVENUE CALCULATION ---
-        const burnAmount = Math.floor(stake * 0.05); 
-        const effectiveStake = stake - burnAmount; 
+        const burnAmount = Math.floor(stake * 0.05);
+        const effectiveStake = stake - burnAmount;
         const potentialReturn = Math.floor(effectiveStake * finalOdds);
-
-        // 5. Deduct full stake from player
+        
+        // --- ADDED: Create Log Entry Locally ---
+        const logEntry = {
+            id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            ts: Date.now(),
+            amount: -stake,
+            cat: 'Betting',
+            desc: `Stake: ${effectiveStake} BP | Fee: ${burnAmount} BP`
+        };
+        
+        // 5. Deduct full stake from player AND Save History Atomically
         batch.update(db.collection("players").doc(myID), {
-            bounty: firebase.firestore.FieldValue.increment(-stake)
+            bounty: firebase.firestore.FieldValue.increment(-stake),
+            // UPDATED: Add the log entry directly in the batch
+            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
         });
-
+        
+        // --- NEW: TRANSFER STAKE TO SYSTEM POOL ---
+        // The money leaves the player and enters the House Pool immediately.
+        // If they lose, it stays there. If they win, the House pays them back from this pool.
+        batch.update(db.collection("system").doc("pool"), {
+            poolBP: firebase.firestore.FieldValue.increment(stake)
+        });
+        
         // 6. Create the bet record
         const betId = `BET_${Date.now()}_${myID.slice(0,3)}`;
         batch.set(db.collection("bets").doc(betId), {
@@ -2307,10 +2470,9 @@ async function placeBet() {
             status: 'pending',
             ts: Date.now()
         });
-
-        // 7. Log the transaction
-        logTransaction(myID, -stake, 'Betting', `Stake: ${effectiveStake} BP | Fee: ${burnAmount} BP`);
-
+        
+        // 7. Log Transaction removed from here as it is now inside the batch at Step 5
+        
         await batch.commit();
         notify(`Bet Confirmed! ${burnAmount} BP Burned.`, "check-circle");
         closeModal('modal-betting');
@@ -2870,7 +3032,10 @@ async function askFactoryReset() { askConfirm("WIPE CLOUD?", async () => { const
 // --- 11. NAVIGATION ---
 // [UPDATED] switchTab: Fixed 'Arena' navigation stuck issue
 function switchTab(id) {
-    // 1. UPDATED LIST: Replaced 'broker' with 'arena'
+    // 1. SAVE STATE: Crucial for optimized refreshUI logic
+    localStorage.setItem('active_tab', id);
+
+    // 2. NAVIGATION UI: Handle view visibility and icon colors
     const tabs = ['home', 'schedule', 'arena', 'elite', 'settings', 'rules', 'all-matches'];
     
     tabs.forEach(v => {
@@ -2892,14 +3057,19 @@ function switchTab(id) {
     // Activate the nav icon
     if (activeNav) activeNav.classList.replace('text-slate-500', 'text-emerald-500');
     
-    // 2. UPDATED LOGIC: Trigger 'renderBrokerBoard' when 'arena' is clicked
+    // 3. TARGETED RENDERING: Trigger specific functions for the active tab
     if (id === 'arena') renderBrokerBoard();
     if (id === 'settings') renderPlayerDashboard();
     if (id === 'elite') renderEliteBracket();
     if (id === 'schedule') renderSchedule();
     
+    // 4. GLOBAL REFRESH: Trigger the optimized refreshUI
+    refreshUI();
+    
+    // Refresh icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 
@@ -3255,7 +3425,7 @@ function openShopItem(key) {
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
     
-    // Populate Modal
+    // Populate Modal UI
     document.getElementById('shop-modal-title').innerText = item.name;
     document.getElementById('shop-modal-price').innerText = `${item.price} BP`;
     document.getElementById('shop-modal-desc').innerText = item.desc;
@@ -3265,42 +3435,52 @@ function openShopItem(key) {
     const iconContainer = document.getElementById('shop-modal-icon');
     iconContainer.innerHTML = `<i data-lucide="${item.icon}" class="w-6 h-6 ${item.color}"></i>`;
     if (typeof lucide !== 'undefined') lucide.createIcons();
-
+    
     // Logic for Button Action
     const btn = document.getElementById('btn-shop-action');
     const inv = me?.inventory || {};
     const active = me?.active_effects || {};
-    const history = me?.purchase_history || {}; // NEW
+    const history = me?.purchase_history || {};
     
-    const isOwned = (inv[key] || 0) > 0;
-    const isActive = active[key];
-    const hasBoughtEver = history[key] === true; // NEW
-
+    const isOwned = (inv[key] || 0) > 0; // Has stock (from Pass or Purchase)
+    const isActive = active[key]; // Currently active
+    const hasBoughtManually = history[key] === true; // Bought via BP from Shop
+    
+    // LOGIC HIERARCHY
     if (key === 'vault_access' && me?.vault_data?.amount > 0) {
+        // Special case for Vault
         btn.innerText = "VAULT LOCKED";
         btn.onclick = () => notify("Vault is currently sealed.", "lock");
         btn.className = "flex-1 py-3 bg-slate-700 text-slate-400 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed";
-    } else if (isActive) {
+    }
+    else if (isActive) {
+        // Priority 1: Already Active
         btn.innerText = "ALREADY ACTIVE";
         btn.onclick = null;
         btn.className = "flex-1 py-3 bg-emerald-900/50 text-emerald-500 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed";
-    } else if (isOwned) {
-        // Player has it but hasn't used it yet
+    }
+    else if (isOwned) {
+        // Priority 2: In Inventory (Free Pass Item OR Purchased Item)
+        // User must use this stock before buying another
         btn.innerText = "ACTIVATE NOW";
         btn.onclick = () => key === 'vault_access' ? openVaultModal() : activateShopItem(key);
         btn.className = "flex-1 py-3 bg-white text-slate-900 text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
-    } else if (hasBoughtEver) {
-        // NEW: Player bought it, used it, and now is blocked from buying again
+    }
+    else if (hasBoughtManually) {
+        // Priority 3: No Stock + Bought Manually Before = SOLD OUT
+        // This only triggers if they bought it from the shop, used it, and came back.
         btn.innerText = "SOLD OUT (MAX 1)";
         btn.onclick = () => notify("Item limit reached (1 Per Player)", "lock");
         btn.className = "flex-1 py-3 bg-slate-800 text-slate-500 text-[9px] font-black rounded-xl uppercase tracking-widest cursor-not-allowed border border-slate-700";
-    } else {
-        // Player has never bought it
+    }
+    else {
+        // Priority 4: No Stock + Never Bought Manually = AVAILABLE
+        // This works even if they used a Pass item previously, because Pass didn't set 'hasBoughtManually'
         btn.innerText = `PURCHASE (-${item.price})`;
         btn.onclick = () => buyShopItem(key);
         btn.className = "flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase tracking-widest shadow-lg";
     }
-
+    
     document.getElementById('modal-shop-details').classList.remove('hidden');
 }
 
@@ -3310,9 +3490,14 @@ async function buyShopItem(key) {
     const me = state.players.find(p => p.id === myID);
     const item = SHOP_ITEMS[key];
 
-    // Double check history here for security
+    // 1. Check if already purchased MANUALLY
     if (me.purchase_history && me.purchase_history[key]) {
-        return notify("You have already purchased this item once.", "alert-circle");
+        return notify("Sold Out: You hit the purchase limit.", "alert-circle");
+    }
+
+    // 2. Check if they already hold one (from Pass) - Prevent Hoarding
+    if ((me.inventory && me.inventory[key] > 0)) {
+         return notify("Activate your current item first!", "layers");
     }
 
     if (me.bounty < item.price) return notify("Insufficient Funds", "alert-circle");
@@ -3320,21 +3505,37 @@ async function buyShopItem(key) {
     try {
         const batch = db.batch();
         const ref = db.collection("players").doc(myID);
+
+        const logEntry = {
+            id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            ts: Date.now(),
+            amount: -item.price, // Negative amount for cost
+            cat: 'Shop',
+            desc: `Purchased ${item.name}`
+        };
         
-        // Deduct Price
+        // 3. Deduct Price
         batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-item.price) });
-        // Add to Inventory
+        
+        // 4. Add to Inventory
         batch.update(ref, { [`inventory.${key}`]: 1 });
-        // NEW: Mark as purchased forever
+        
+        // 5. Mark as purchased manually (This triggers "Sold Out" after use)
         batch.update(ref, { [`purchase_history.${key}`]: true });
+
+        // 6. Save Log
+        batch.update(ref, { 
+            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry) 
+        });
         
         await batch.commit();
-        logTransaction(myID, -item.price, 'Shop', `Purchased ${item.name}`);
-
-notify(`${item.name} Purchased!`, "shopping-bag");
+        
         notify(`${item.name} Purchased!`, "shopping-bag");
         document.getElementById('modal-shop-details').classList.add('hidden');
-    } catch (e) { notify("Transaction Failed", "x-circle"); }
+    } catch (e) { 
+        console.error("Shop Error:", e);
+        notify("Transaction Failed", "x-circle"); 
+    }
 }
 
 
@@ -4288,14 +4489,14 @@ function refreshUI() {
     const rawID = localStorage.getItem('slc_user_id') || "";
     const myID = rawID.toUpperCase();
     
-    // Calculate streaks for all players
+    // 1. Calculate streaks (Data preparation)
     state.players.forEach(p => {
         p.currentStreak = calculateWinStreak(p.id);
     });
-
+    
     const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
     
-    // Update individual bounty display
+    // 2. Update HUD (Always visible elements)
     const userBountyEl = document.getElementById('user-bounty-display');
     if (userBountyEl) {
         if (state.isAdmin) {
@@ -4305,74 +4506,84 @@ function refreshUI() {
         }
     }
     
-    // Update global pool display
-    const totalBP = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
+    // --- UPDATED: TOTAL POOL CALCULATION (Players + House) ---
+    // Calculate Sum of All Player Wallets
+    const totalPlayerMoney = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
+    // Get House Money from State (set by listenToCloud)
+    const houseMoney = state.systemPool || 0;
+    
+    // Total Economy = Players + House
+    const totalEconomy = totalPlayerMoney + houseMoney;
+    
     const poolEl = document.getElementById('total-pool-display');
-    if (poolEl) poolEl.innerText = `POOL: ${totalBP.toLocaleString()} BP`;
-
-    // --- NEW: HEADER HUD DATA INJECTION ---
+    if (poolEl) {
+        poolEl.innerText = `Pool: ${totalEconomy.toLocaleString()}`;
+    }
+    // ---------------------------------------------------------
+    
+    // Header HUD Data Injection
     const headerAvatar = document.getElementById('header-user-avatar');
     const phaseInd = document.getElementById('phase-indicator');
     const idBadge = document.getElementById('user-id-badge');
-
-    if (headerAvatar && myPlayer) {
-        // Injects player photo into the right HUD wing
-        headerAvatar.innerHTML = getAvatarUI(myPlayer, "w-full", "h-full", "text-[10px]");
-    }
-
-    if (phaseInd) {
-        // Updates the P1/P2/P3 text in the central command core
-        phaseInd.innerText = `P${state.activePhase}`;
-    }
-
-    if (idBadge && myPlayer) {
-        // Displays masked ID in the right HUD module
-        idBadge.innerText = myPlayer.id;
-    }
-    // --------------------------------------
     
-    checkPhaseLocks();
-
+    if (headerAvatar && myPlayer) headerAvatar.innerHTML = getAvatarUI(myPlayer, "w-full", "h-full", "text-[10px]");
+    if (phaseInd) phaseInd.innerText = `P${state.activePhase}`;
+    if (idBadge && myPlayer) idBadge.innerText = myPlayer.id;
+    
+    // 3. TAB-BASED SELECTIVE RENDERING (CRITICAL FOR PERFORMANCE)
+    // We check which section is currently "visible" to the user
+    const activeTab = localStorage.getItem('active_tab') || 'home';
+    
     try {
-        renderTop5Leaderboard();
+        // Global components that run regardless of tab
+        renderNewsTicker();
+        checkPhaseLocks();
+        checkVaultStatus();
         
-        // --- ADD THIS LINE HERE ---
-        // This ensures the thin box on the home screen updates automatically
-        renderBettingAnalytics(); 
-
-        // Update Shop if visible
-        if (document.getElementById('shop-section') && !document.getElementById('shop-section').classList.contains('hidden')) {
+        // Section-specific rendering
+        if (activeTab === 'home') {
+            renderTop5Leaderboard();
+            renderBettingAnalytics();
+            
+            // Check for popups only on home to prevent interruption
+            const isMatchAlertOpen = !document.getElementById('modal-match-alert').classList.contains('hidden');
+            if (!isMatchAlertOpen) {
+                checkPassPromo();
+                checkPriorityMatches();
+            }
+        }
+        else if (activeTab === 'schedule') {
+            renderSchedule();
+        }
+        else if (activeTab === 'arena') {
+            renderBrokerBoard();
+        }
+        else if (activeTab === 'elite') {
+            renderEliteBracket();
+        }
+        else if (activeTab === 'settings') {
+            renderPlayerDashboard();
+        }
+        
+        // Conditional rendering for overlays/sections
+        const shopSection = document.getElementById('shop-section');
+        if (shopSection && !shopSection.classList.contains('hidden')) {
             renderShop();
         }
         
-        // Update Scorers if visible
-        if (document.getElementById('scorers-full-section') && !document.getElementById('scorers-full-section').classList.contains('hidden')) {
+        const scorersSection = document.getElementById('scorers-full-section');
+        if (scorersSection && !scorersSection.classList.contains('hidden')) {
             renderTopScorers();
         }
-
-        checkVaultStatus();
-        renderSchedule();
-        renderEliteBracket();
-        renderBrokerBoard(); 
-        renderPlayerDashboard();
-        renderNewsTicker();
-        const matchAlertIsOpen = checkPriorityMatches();
-        if (!matchAlertIsOpen) {
-        checkPassPromo();
-    }
-        checkPriorityMatches(); 
-// Add this check immediately after
-const isMatchAlertOpen = !document.getElementById('modal-match-alert').classList.contains('hidden');
-if (!isMatchAlertOpen) {
-        checkPassPromo();
-    }
-        // Refresh Lucide icons to ensure new header elements render correctly
+        
+        // Refresh Lucide icons
         if (typeof lucide !== 'undefined') lucide.createIcons();
-
+        
     } catch (err) {
         console.error("UI Render Error:", err);
     }
 }
+
 
 // [MOVED] checkTournamentWinner: Now completely outside and global
 function checkTournamentWinner() {
@@ -4505,20 +4716,31 @@ async function manualMarkAsSold(targetId, itemKey) {
 // ==========================================
 
 // 1. Helper to Save Log to Database
-function logTransaction(uid, amount, cat, desc) {
+// ==========================================
+// [CORE] TRANSACTION LOGGING ENGINE (UPDATED)
+// ==========================================
+// Now supports 'batch' processing to guarantee logs are saved before page reloads
+function logTransaction(uid, amount, cat, desc, batch = null) {
     const pRef = db.collection("players").doc(uid);
     const logEntry = {
         id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         ts: Date.now(),
-        amount: amount, // Positive for earnings, negative for expenses
-        cat: cat, // 'Betting', 'Match', 'Shop', etc.
+        amount: amount, // Positive = Income, Negative = Expense
+        cat: cat,
         desc: desc
     };
     
-    // This ensures the array is updated correctly in Firestore
-    pRef.update({
-        bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
-    });
+    // ATOMIC WRITE: If a batch is provided, add to it.
+    if (batch) {
+        batch.update(pRef, {
+            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
+        });
+    } else {
+        // STANDARD WRITE: Return promise so we can 'await' it if needed
+        return pRef.update({
+            bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry)
+        });
+    }
 }
 
 // 2. Render the History Modal
@@ -4596,121 +4818,153 @@ async function openBPHistory() {
 // ==========================================
 // [ADMIN TOOL] TIME MACHINE (HISTORY SYNC)
 // ==========================================
+// ==========================================
+// [ADMIN TOOL] SMART HISTORY SYNC (NO DUPLICATES)
+// ==========================================
 async function forceRebuildHistory() {
-    askConfirm("DANGER: WIPE & REBUILD ALL HISTORY?", async () => {
-        const notifId = notify("Time Machine Started...", "loader");
+    askConfirm("SMART SYNC: Fill missing history without duplicates?", async () => {
+        const notifId = notify("Analyzing Data...", "loader");
         const batch = db.batch();
         const players = state.players;
         const matches = state.matches.filter(m => m.status === 'played');
-
-        console.log(`Analyzing ${players.length} players and ${matches.length} matches...`);
-
-        // Iterate every player
+        
+        console.log(`Smart Syncing ${players.length} players...`);
+        
         players.forEach(p => {
             const pid = p.id;
             const pRef = db.collection("players").doc(pid);
-            let reconstructedLogs = [];
-
-            // 1. ADD: Initial Welcome Bonus (The Foundation)
-            reconstructedLogs.push({
-                id: `init_${pid}`,
-                ts: 1704067200000, // Jan 1 2024 (Approx start)
-                amount: 500,
-                cat: 'System',
-                desc: 'Initial Bounty Grant'
-            });
-
-            // 2. ADD: Match History
+            
+            // 1. Get Existing Logs (Preserve Real Data)
+            const currentLogs = p.bp_logs || [];
+            
+            // 2. Separate "Real" Logs from "Legacy" Logs
+            // We keep ALL "TX_" (Real) logs. We discard old "legacy_" logs to regenerate them fresh if needed.
+            let cleanLogs = currentLogs.filter(log => log.id && !log.id.startsWith('legacy_'));
+            
+            // 3. GENERATE MISSING DATA
+            let newLegacyLogs = [];
+            
+            // --- A. INITIAL BONUS (If missing) ---
+            const hasInit = cleanLogs.some(l => l.cat === 'System' && l.desc.includes('Initial'));
+            if (!hasInit) {
+                newLegacyLogs.push({
+                    id: `legacy_init_${pid}`,
+                    ts: 1704067200000,
+                    amount: 500,
+                    cat: 'System',
+                    desc: 'Initial Bounty Grant'
+                });
+            }
+            
+            // --- B. PASS PURCHASE (Smart Check) ---
+            if (p.passType && PASS_CONFIG[p.passType]) {
+                // Check if a REAL purchase log already exists
+                const hasRealPassLog = cleanLogs.some(l => l.desc.includes('Pass Purchase'));
+                
+                // Only add legacy log if NO real log exists
+                if (!hasRealPassLog) {
+                    const cost = PASS_CONFIG[p.passType].cost;
+                    newLegacyLogs.push({
+                        id: `legacy_pass_${pid}`,
+                        ts: 1704067300000,
+                        amount: -cost,
+                        cat: 'System',
+                        desc: `${p.passType.toUpperCase()} Pass Purchase (Restored)`
+                    });
+                }
+            }
+            
+            // --- C. MATCH HISTORY (Smart Check) ---
             matches.forEach(m => {
-                // Skip if this player wasn't in this match
                 if (m.homeId !== pid && m.awayId !== pid) return;
-
-                const isHome = m.homeId === pid;
-                const oppId = isHome ? m.awayId : m.homeId;
+                
+                // Check if this specific match is already logged (Real or Legacy)
+                // We assume real logs might mention the opponent name
+                const oppId = m.homeId === pid ? m.awayId : m.homeId;
                 const oppName = state.players.find(x => x.id === oppId)?.name || "Opponent";
                 
-                let amount = 0;
-                let cat = "Match";
-
-                // A. TRY EXACT DATA (If available from newer versions)
-                if (m.resultDelta) {
-                    amount = isHome ? m.resultDelta.h : m.resultDelta.a;
-                } 
-                // B. ESTIMATE LEGACY DATA (If exact delta missing)
-                else {
-                    const sH = parseInt(m.score.h);
-                    const sA = parseInt(m.score.a);
-                    
-                    if (sH === sA) {
-                        amount = -30; // Standard Draw Penalty
-                    } else if ((isHome && sH > sA) || (!isHome && sA > sH)) {
-                        amount = 100; // Standard Win
-                    } else {
-                        amount = -50; // Standard Loss
-                    }
-                }
-
-                cat = amount > 0 ? 'Match Win' : (amount < 0 ? 'Match Loss' : 'Match Draw');
-
-                reconstructedLogs.push({
-                    id: `legacy_match_${m.id}`,
-                    ts: m.createdAt || (Date.now() - 1000000), // Use match time or older date
-                    amount: parseInt(amount),
-                    cat: cat,
-                    desc: `Vs ${oppName}`
-                });
-            });
-
-            // 3. ADD: Purchase History
-            // Check 'purchase_history' OR inferred from 'inventory'
-            const purchases = p.purchase_history || {};
-            const inventory = p.inventory || {};
-            
-            // Merge both sources
-            const allItems = new Set([...Object.keys(purchases), ...Object.keys(inventory)]);
-
-            allItems.forEach(key => {
-                // Skip vault items as they are deposits, not costs
-                if (key === 'vault_access') return; 
+                const alreadyLogged = cleanLogs.some(l => l.desc.includes(`vs ${oppName}`) || l.desc.includes(`Vs ${oppName}`));
                 
-                const itemDef = SHOP_ITEMS[key];
-                if (itemDef) {
-                    reconstructedLogs.push({
-                        id: `legacy_buy_${key}`,
-                        ts: Date.now(), // No date for legacy buys, set to now
-                        amount: -itemDef.price,
-                        cat: 'Shop',
-                        desc: `Purchased ${itemDef.name}`
+                if (!alreadyLogged) {
+                    const isHome = m.homeId === pid;
+                    let amount = 0;
+                    let cat = "Match";
+                    
+                    if (m.resultDelta) {
+                        amount = isHome ? m.resultDelta.h : m.resultDelta.a;
+                    } else {
+                        // Fallback Calc
+                        const sH = parseInt(m.score.h);
+                        const sA = parseInt(m.score.a);
+                        if (sH === sA) amount = -30;
+                        else if ((isHome && sH > sA) || (!isHome && sA > sH)) amount = 100;
+                        else amount = -50;
+                    }
+                    
+                    cat = amount > 0 ? 'Match Win' : (amount < 0 ? 'Match Loss' : 'Match Draw');
+                    
+                    newLegacyLogs.push({
+                        id: `legacy_match_${m.id}`,
+                        ts: m.createdAt || (Date.now() - 10000000),
+                        amount: parseInt(amount),
+                        cat: cat,
+                        desc: `Vs ${oppName}`
                     });
                 }
             });
-
-            // 4. ADD: Vault Logic
+            
+            // --- D. SHOP ITEMS (Smart Check) ---
+            const purchases = p.purchase_history || {};
+            const inventory = p.inventory || {};
+            const allItems = new Set([...Object.keys(purchases), ...Object.keys(inventory)]);
+            
+            allItems.forEach(key => {
+                if (key === 'vault_access') return;
+                const itemDef = SHOP_ITEMS[key];
+                
+                if (itemDef) {
+                    const hasItemLog = cleanLogs.some(l => l.desc.includes(`Purchased ${itemDef.name}`));
+                    if (!hasItemLog) {
+                        newLegacyLogs.push({
+                            id: `legacy_buy_${key}`,
+                            ts: Date.now() - 500000,
+                            amount: -itemDef.price,
+                            cat: 'Shop',
+                            desc: `Purchased ${itemDef.name}`
+                        });
+                    }
+                }
+            });
+            
+            // --- E. VAULT (Smart Check) ---
             if (p.vault_data && p.vault_data.amount > 0) {
-                 reconstructedLogs.push({
-                    id: `legacy_vault_lock`,
-                    ts: p.vault_data.depositedAt || Date.now(),
-                    amount: -p.vault_data.amount,
-                    cat: 'Vault',
-                    desc: 'Locked Funds (Active)'
-                });
+                const hasVaultLog = cleanLogs.some(l => l.cat === 'Vault' && l.amount < 0);
+                if (!hasVaultLog) {
+                    newLegacyLogs.push({
+                        id: `legacy_vault_lock`,
+                        ts: p.vault_data.depositedAt || Date.now(),
+                        amount: -p.vault_data.amount,
+                        cat: 'Vault',
+                        desc: 'Locked Funds (Active)'
+                    });
+                }
             }
-
-            // 5. SORT & SAVE
-            // Sort by timestamp (newest first)
-            reconstructedLogs.sort((a, b) => b.ts - a.ts);
-
-            // Overwrite the log array
-            batch.update(pRef, { bp_logs: reconstructedLogs });
+            
+            // 4. MERGE & SORT
+            const finalLogs = [...cleanLogs, ...newLegacyLogs];
+            finalLogs.sort((a, b) => b.ts - a.ts);
+            
+            // 5. UPDATE DB
+            batch.update(pRef, { bp_logs: finalLogs });
         });
-
+        
         try {
             await batch.commit();
-            notify("History Successfully Rebuilt!", "check-circle");
+            notify("Smart Sync Complete!", "check-circle");
             setTimeout(() => location.reload(), 2000);
         } catch (e) {
             console.error(e);
-            notify("Rebuild Failed", "x-circle");
+            notify("Sync Failed", "x-circle");
         }
     });
 }
@@ -4919,4 +5173,76 @@ function showPassPreview(type) {
     
     openModal('modal-pass-details');
     if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// ==========================================
+// EMERGENCY ADMIN TOOLS
+// ==========================================
+
+async function adminRepairWallet(targetId) {
+    // 1. Get the Player Data
+    const docRef = db.collection("players").doc(targetId);
+    const doc = await docRef.get();
+    
+    if (!doc.exists) return notify("Player not found", "x-circle");
+    const p = doc.data();
+    
+    // --- STEP 1: CALCULATE THE REFUND (Optional) ---
+    // Check if they were wrongly charged for the Pass Reward "Insurance"
+    // We look for a log that says "Purchased INSURANCE" but was created recently
+    const logs = p.bp_logs || [];
+    let refundAmount = 0;
+    
+    // Ask Admin if they want to apply the refund for the specific item
+    // You can remove this check if you just want to fix the math
+    const applyRefund = confirm(`Do you want to refund 15 BP for the Insurance error to ${p.name}?`);
+    
+    if (applyRefund) {
+        refundAmount = 15;
+        // Create a log for the refund so the math balances out
+        const refundLog = {
+            id: `REFUND_${Date.now()}`,
+            ts: Date.now(),
+            amount: 15,
+            cat: 'System',
+            desc: 'Refund: Pass Item Error'
+        };
+        logs.push(refundLog); // Add to local array for calculation
+    }
+    
+    // --- STEP 2: RECALCULATE TOTAL BALANCE ---
+    // We strictly sum up EVERY transaction in the logs to find the "True Balance"
+    let trueBalance = 0;
+    
+    // Safety check: Does user have an "Initial" log? If not, start at 500.
+    const hasInit = logs.some(l => l.id === 'init' || l.desc.includes('Initial'));
+    if (!hasInit) trueBalance = 500;
+    
+    logs.forEach(log => {
+        trueBalance += parseInt(log.amount);
+    });
+    
+    // --- STEP 3: UPDATE FIREBASE ---
+    try {
+        const updates = {
+            bounty: trueBalance
+        };
+        
+        if (applyRefund) {
+            updates.bp_logs = logs; // Save the new log array with the refund
+        }
+        
+        await docRef.update(updates);
+        
+        // --- STEP 4: RESULT ---
+        let msg = `Wallet Repaired! New Balance: ${trueBalance}.`;
+        if (applyRefund) msg += ` (Includes +15 Refund)`;
+        
+        alert(msg);
+        location.reload(); // Refresh to see changes
+        
+    } catch (e) {
+        console.error(e);
+        alert("Error updating wallet");
+    }
 }
