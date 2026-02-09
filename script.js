@@ -878,12 +878,11 @@ async function buyPass(type) {
     
     askConfirm(`Purchase ${type.toUpperCase()} Pass for ${cost} BP?`, async () => {
         try {
+            // 1. CRITICAL: Update the Player (Deduct Money & Give Pass)
+            // We do this in a Batch to ensure both happen or neither happens.
             const batch = db.batch();
             const playerRef = db.collection("players").doc(myID);
-            const statsRef = db.collection("settings").doc("pass_stats"); // Ledger Reference
-            const poolRef = db.collection("system").doc("pool");
 
-            // 1. Deduct from Player
             batch.update(playerRef, {
                 bounty: firebase.firestore.FieldValue.increment(-cost),
                 passType: type,
@@ -891,18 +890,26 @@ async function buyPass(type) {
                 passActive: true
             });
             
-            [span_0](start_span)// 2. Update Ledger Revenue[span_0](end_span)
-            batch.set(statsRef, {
-                total_revenue: firebase.firestore.FieldValue.increment(cost)
-            }, { merge: true });
-
-            // 3. Update Global House Pool
-            batch.set(poolRef, {
-                poolBP: firebase.firestore.FieldValue.increment(cost)
-            }, { merge: true });
-            
+            // Commit ONLY the player changes first
             await batch.commit();
+
+            // 2. NON-CRITICAL: Update Global Stats (Fire and Forget)
+            // We run this *after* the purchase. If this fails (due to permissions), 
+            // the user still keeps their pass.
+            const statsRef = db.collection("settings").doc("pass_stats");
+            const poolRef = db.collection("system").doc("pool");
+
+            // Attempt to update ledger (ignore errors)
+            statsRef.set({
+                total_revenue: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true }).catch(e => console.log("Ledger update skipped", e));
+
+            // Attempt to update pool (ignore errors)
+            poolRef.set({
+                poolBP: firebase.firestore.FieldValue.increment(cost)
+            }, { merge: true }).catch(e => console.log("Pool update skipped", e));
             
+            // 3. Log & Success Message
             logTransaction(myID, -cost, 'System', `${type} Pass Purchase`);
             notify("Pass Activated!", "check-circle");
             
@@ -913,7 +920,6 @@ async function buyPass(type) {
         }
     });
 }
-
 
 
 async function syncPassLedgerLegacy() {
