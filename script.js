@@ -120,6 +120,7 @@ let state = {
 };
 let confirmCallback = null;
 let alertInterval = null; 
+let uiRefreshTimer = null;
 
 // --- 2. CORE UTILITY ENGINES ---
 
@@ -129,32 +130,36 @@ let alertInterval = null;
  */
  // --- NEW HELPER: CALCULATE WIN STREAK ---
 function calculateWinStreak(playerId) {
-    // 1. Get all played matches for this player
+    // 1. Get all played matches for this player, sorted by most recent first
     const played = state.matches.filter(m => 
         m.status === 'played' && (m.homeId === playerId || m.awayId === playerId)
     );
-
-    // 2. Sort by ID descending (assuming ID implies time) or use a Date field if available
-    // We use ID string comparison for now as per your existing logic
     played.sort((a, b) => b.id.localeCompare(a.id));
 
-    let streak = 0;
+    let winCount = 0;
     
-    // 3. Count backwards from most recent
+    // 2. Iterate through match history
     for (const m of played) {
         let winnerId = null;
         if (m.score.h > m.score.a) winnerId = m.homeId;
         else if (m.score.a > m.score.h) winnerId = m.awayId;
         
         if (winnerId === playerId) {
-            streak++;
+            // It's a Win: Increase count
+            winCount++;
+        } else if (m.score.h === m.score.a) {
+            // It's a Draw: Do nothing (the streak "freezes" or continues)
+            continue; 
         } else {
-            // Loss or Draw breaks the streak
+            // It's a Loss: The streak is destroyed immediately
             break; 
         }
     }
-    return streak;
+    
+    // Returns the total consecutive wins (ignoring draws) since the last loss
+    return winCount;
 }
+
 
 function getAvatarUI(p, w="w-8", h="h-8", text="text-xs") {
     if (!p) return `<div class="${w} ${h} rounded-full bg-slate-800 border border-white/5"></div>`;
@@ -435,57 +440,77 @@ function checkSession() {
     }
 }
 
+// --- 3. AUTHENTICATION & SESSIONS (UPDATED) ---
+
 function enterApp(identity) {
     const auth = document.getElementById('auth-screen');
     const app = document.getElementById('app-container');
     
-    // Hide Auth
-    if(auth) auth.classList.add('hidden');
+    // Hide Auth Screen
+    if (auth) auth.classList.add('hidden');
     
-    // Show App (Block is fine since we are using fixed internals)
-    if(app) {
+    // Show App Container
+    if (app) {
         app.classList.remove('hidden');
-        // We remove 'flex' just in case, to let the fixed positioning take over
-        app.classList.remove('flex', 'flex-col'); 
+        app.classList.remove('flex', 'flex-col');
         app.classList.add('block');
     }
-
+    
     const badge = document.getElementById('user-id-badge');
-    if(badge) {
+    if (badge) {
         const idText = identity ? identity.toString() : "UNKNOWN";
         badge.innerText = state.isAdmin ? "MASTER ADMIN" : `SLC-ID: ${idText}`;
     }
     
+    // Show/Hide Admin Tools
     document.querySelectorAll('.admin-tool').forEach(el => {
         el.classList.toggle('hidden', !state.isAdmin);
     });
     
+    // Start Data Sync
     listenToCloud();
+    
+    setTimeout(() => {
+        switchTab('home');
+    }, 100);
 }
 
-
+function triggerSafeRefresh() {
+    if (uiRefreshTimer) clearTimeout(uiRefreshTimer);
+    uiRefreshTimer = setTimeout(() => {
+        refreshUI();
+    }, 100); // Wait 100ms to collect all data, then update ONCE
+}
 
 // --- 4. REAL-TIME DATA SYNC ---
-
-// --- 4. OPTIMIZED REAL-TIME DATA SYNC ---
 async function listenToCloud() {
     const myID = localStorage.getItem('slc_user_id');
     
-    // 1. Initial Load: Use 'get' instead of 'onSnapshot' for large collections
-    // This stops the app from reading the entire database every time any player makes a move.
-    try {
-        const pSnap = await db.collection("players").get();
-        state.players = pSnap.docs.map(doc => doc.data());
-        
-        const mSnap = await db.collection("matches").get();
-        state.matches = mSnap.docs.map(doc => doc.data());
-        
-        refreshUI();
-    } catch (e) {
-        console.error("Quota or Connection Error:", e);
-    }
+    // 1. Players Listener (REAL-TIME & OPTIMIZED)
+    db.collection("players").onSnapshot(snapshot => {
+        // Just update the data in memory
+        state.players = snapshot.docs.map(doc => doc.data());
+        // Schedule a safe UI update
+        triggerSafeRefresh();
+    }, error => {
+        console.error("Player Sync Error:", error);
+    });
     
-    // 2. Global Settings Listener (Keep as onSnapshot - low read cost)
+    // 2. Matches Listener (REAL-TIME & OPTIMIZED)
+    db.collection("matches").onSnapshot(snapshot => {
+        state.matches = snapshot.docs.map(doc => doc.data());
+        
+        // Background checks happen immediately
+        checkPhaseLocks();
+        checkPriorityMatches();
+        
+        // UI update is throttled to prevent lag
+        triggerSafeRefresh();
+    }, error => {
+        console.error("Match Sync Error:", error);
+    });
+    
+    // 3. Global Settings Listener
     db.collection("settings").doc("global").onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
@@ -493,28 +518,25 @@ async function listenToCloud() {
             state.phase3UnlockTime = data.phase3UnlockTime || null;
             state.sponsorMessage = data.sponsorMessage || "";
             state.bettingActive = data.bettingActive !== false;
-            // Target specific UI updates rather than a full global refresh
+            
             renderNewsTicker();
             checkPhaseLocks();
         }
     });
     
-    // 3. Selective Personal Listener (Crucial for real-time BP updates)
-    // Only listen for changes to YOUR specific document.
+    // 4. System Pool Listener
+    db.collection("system").doc("pool").onSnapshot(doc => {
+        if (doc.exists) {
+            state.systemPool = doc.data().poolBP || 0;
+            // Pool update is lightweight, can be direct or throttled
+            triggerSafeRefresh();
+        } else {
+            db.collection("system").doc("pool").set({ poolBP: 0 }, { merge: true });
+        }
+    });
+    
+    // 5. Betting Activity Listener
     if (myID && !localStorage.getItem('slc_admin')) {
-        db.collection("players").doc(myID).onSnapshot(doc => {
-            if (doc.exists) {
-                const updatedMe = doc.data();
-                const idx = state.players.findIndex(p => p.id === myID);
-                if (idx !== -1) state.players[idx] = updatedMe;
-                
-                // Update specific HUD elements immediately
-                const userBountyEl = document.getElementById('user-bounty-display');
-                if (userBountyEl) userBountyEl.innerText = `${updatedMe.bounty.toLocaleString()} BP`;
-            }
-        });
-        
-        // Betting Activity Listener
         db.collection("bets")
             .where("userId", "==", myID)
             .onSnapshot(snapshot => {
@@ -523,40 +545,12 @@ async function listenToCloud() {
                     betSet.add(doc.data().matchId);
                 });
                 state.myBets = betSet;
-                refreshUI();
+                triggerSafeRefresh();
             });
     }
     
-    // 4. Winner Tracking (Global)
+    // 6. Winner Tracking
     checkTournamentWinner();
-    
-    // 5. HOUSE POOL REAL-TIME SYNC (UPDATED)
-    // This now calculates Total Economy = Player Wallets + House Pool
-    db.collection("system").doc("pool").onSnapshot(doc => {
-        if (doc.exists) {
-            const poolData = doc.data();
-            
-            // A. Save House Balance to State (Crucial for calculations elsewhere)
-            state.systemPool = poolData.poolBP || 0;
-            
-            // B. Calculate Total Economy (All Players + House Pool)
-            const totalPlayerMoney = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
-            const totalEconomy = totalPlayerMoney + state.systemPool;
-            
-            // C. Update the Header Display with the Total Economy
-            const poolEl = document.getElementById('total-pool-display');
-            if (poolEl) {
-                poolEl.innerText = `Pool: ${totalEconomy.toLocaleString()}`;
-            }
-            
-            // D. Trigger global refresh to ensure betting limits/shop logic updates based on new pool data
-            refreshUI();
-            
-        } else {
-            // Initialize if missing
-            db.collection("system").doc("pool").set({ poolBP: 0 }, { merge: true });
-        }
-    });
 }
 
 
@@ -952,13 +946,8 @@ async function buyPass(type) {
                 poolBP: firebase.firestore.FieldValue.increment(cost)
             }, { merge: true });
             
-            // 5. COMMIT ALL CHANGES
-            await batch.commit();
-            
-            // 6. Success Message & Reload
-            notify("Pass Activated!", "check-circle");
-            
-            setTimeout(() => location.reload(), 1000);
+await batch.commit();
+notify("Pass Activated!", "check-circle");
             
         } catch (e) {
             console.error("Purchase Error:", e);
@@ -1188,6 +1177,62 @@ function renderPlayerDashboard() {
     }
     
      if (state.isAdmin) {
+         // --- NEW: CALCULATE LOAN DATA ---
+let totalPrincipal = 0;
+let totalCurrentDebt = 0;
+let activeLoanCount = 0;
+let loanListHTML = "";
+
+state.players.forEach(p => {
+            if (p.loan_data && p.loan_data.active) {
+                activeLoanCount++;
+                const principal = p.loan_data.principal || 0;
+                const due = p.loan_data.amountDue || 0;
+                
+                totalPrincipal += principal;
+                totalCurrentDebt += due;
+                
+                // Calculate Status
+                const now = Date.now();
+                const deadline = p.loan_data.deadline || 0;
+                const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+                const isOverdue = daysLeft < 0;
+                
+                // Interest accrued so far (Current Debt - Principal)
+                // If they made partial payments, this logic adapts visualy
+                const interestOrPaidDiff = due - principal;
+                let diffDisplay = "";
+
+if (interestOrPaidDiff > 0) {
+    diffDisplay = `<span class="text-rose-500">+${Math.floor(interestOrPaidDiff)} Int.</span>`;
+} else if (interestOrPaidDiff < 0) {
+    diffDisplay = `<span class="text-emerald-500">Paid: ${Math.abs(Math.floor(interestOrPaidDiff))}</span>`;
+} else {
+    diffDisplay = `<span class="text-slate-500">No Change</span>`;
+}
+
+loanListHTML += `
+                    <div class="bg-slate-950 p-3 rounded-xl border ${isOverdue ? 'border-rose-500/50' : 'border-white/5'} flex justify-between items-center mb-2">
+                        <div class="flex items-center gap-3">
+                            ${getAvatarUI(p, "w-8", "h-8")}
+                            <div>
+                                <p class="text-[9px] font-black text-white uppercase">${p.name}</p>
+                                <p class="text-[7px] ${isOverdue ? 'text-rose-500 font-black' : 'text-slate-500'} uppercase">
+                                    ${isOverdue ? `OVERDUE ${Math.abs(daysLeft)} DAYS` : `Due: ${daysLeft} Days`}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[9px] font-black text-white">${Math.floor(due)} BP <span class="text-[7px] text-slate-500">Left</span></p>
+                            <p class="text-[7px] font-bold uppercase">${diffDisplay}</p>
+                        </div>
+                    </div>`;
+            }
+        });
+
+        const totalInterestProjected = totalCurrentDebt - totalPrincipal;
+
+        // --- END CALCULATION ---
         html += `
             <div class="admin-tool space-y-6 mt-8 pt-8 border-t border-white/5">
                 <h2 class="text-[10px] font-black text-rose-500 uppercase text-center tracking-[0.4em] italic">Command Center</h2>
@@ -1210,7 +1255,37 @@ function renderPlayerDashboard() {
                         <p id="admin-pass-net" class="text-center text-[8px] font-black uppercase text-slate-400 mt-3"></p>
                     </div>
                 </div>
+<!-- NEW: LOAN SHARK LEDGER (Insert Here) -->
+<div class="moving-border-rose p-[1px] rounded-[2.1rem] shadow-xl mb-6">
+                    <div class="bg-slate-900 rounded-[2rem] p-5">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-rose-500 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="landmark" class="w-3 h-3"></i> Active Bank Loans
+                            </h3>
+                            <span class="bg-rose-500/10 text-rose-500 text-[8px] font-black px-2 py-0.5 rounded border border-rose-500/20">${activeLoanCount} Active</span>
+                        </div>
 
+                        <!-- Summary Stats -->
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <div class="bg-slate-950 p-3 rounded-xl border border-white/5 text-center">
+                                <p class="text-[7px] text-slate-500 uppercase font-black mb-1">Total Principal</p>
+                                <p class="text-sm font-black text-white">${totalPrincipal.toLocaleString()} BP</p>
+                                <p class="text-[6px] text-slate-600 uppercase">Disbursed</p>
+                                </div>
+                            <div class="bg-slate-950 p-3 rounded-xl border border-white/5 text-center">
+                                <p class="text-[7px] text-slate-500 uppercase font-black mb-1">Accrued Interest</p>
+                                <p class="text-sm font-black text-rose-400">+${Math.max(0, Math.floor(totalInterestProjected)).toLocaleString()} BP</p>
+                                <p class="text-[6px] text-slate-600 uppercase">Profit</p>
+                            </div>
+                        </div>
+
+                        <!-- Debtor List -->
+                        <div class="space-y-1 max-h-[200px] overflow-y-auto custom-scrollbar pr-1">
+                            ${loanListHTML || '<p class="text-[8px] text-slate-600 text-center italic py-2">No active loans found.</p>'}
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="moving-border p-[1px] rounded-[2.6rem] shadow-2xl">
                     <div class="bg-slate-900 rounded-[2.5rem] p-6">
                         <label class="block text-[8px] font-black text-blue-400 uppercase mb-3 tracking-widest">Global Match Date</label>
@@ -1401,186 +1476,169 @@ if (state.isAdmin) {
 
 if (typeof lucide !== 'undefined') lucide.createIcons();
     
-function updatePassUI(me) {
-    const purchaseView = document.getElementById('pass-purchase-view');
-    const activeView = document.getElementById('pass-active-view');
-    
-    if (!purchaseView || !activeView) return;
-
-    if (me && me.passType) {
-        purchaseView.classList.add('hidden');
-        activeView.classList.remove('hidden');
-        
-        const round = me.passRound || 0;
-        const progress = (round / 10) * 100;
-        
-        document.getElementById('current-round-text').innerText = round;
-        document.getElementById('pass-progress-bar').style.width = `${progress}%`;
-        
-        const tag = document.getElementById('active-pass-tag');
-        tag.innerText = `${me.passType} Pass Active`;
-        tag.className = me.passType === 'premium' ? 'bg-gold-500/10 text-gold-500' : 'bg-blue-500/10 text-blue-500';
-        
-        const myID = localStorage.getItem('slc_user_id');
-        const matchesRemaining = state.matches.filter(m => 
-            (m.homeId === myID || m.awayId === myID) && 
-            m.status === 'scheduled'
-        ).length;
-        
-        const remainingTag = document.getElementById('matches-remaining-tag');
-        if (remainingTag) remainingTag.innerText = `${matchesRemaining} Matches Left`;
-        
-        if (round < 10) {
-            const nextReward = PASS_REWARDS[me.passType][round];
-            let displayReward = "";
-
-            if (nextReward.type === 'bp') {
-                let bpBonus = 0;
-                const nextRoundNum = round + 1;
-                const rebate = PASS_CONFIG[me.passType].rebate;
-
-                // Precision Reward Logic for Premium and Standard
-                if (me.passType === 'premium') {
-                    if (nextRoundNum === 2 || nextRoundNum === 4) bpBonus = 100;
-                    else if (nextRoundNum === 7 || nextRoundNum === 9) bpBonus = 250;
-                    else bpBonus = 10;
-                } else {
-                    if ([2, 3, 4, 6, 7].includes(nextRoundNum)) bpBonus = 50;
-                    else if (nextRoundNum === 8 || nextRoundNum === 9) bpBonus = 100;
-                    else bpBonus = 10;
-                }
-                // Show the sum of the rebate and the bonus
-                displayReward = `${rebate + bpBonus} BP`;
-            } else if (nextReward.type === 'item') {
-                displayReward = nextReward.id.toUpperCase();
-            } else if (nextReward.type === 'badge') {
-                displayReward = "NEW TITLE";
-            } else if (nextReward.type === 'vault') {
-                displayReward = "VAULT KEY";
-            }
-            
-            document.getElementById('next-reward-text').innerText = `Next: ${displayReward}`;
-        } else {
-            document.getElementById('next-reward-text').innerText = `MAXED`;
-        }
-    } else {
-        purchaseView.classList.remove('hidden');
-        activeView.classList.add('hidden');
-    }
-}
-
 }
 // --- 7. PHASE OPERATIONS (P1 & P3) ---
 
-// [REPLACEMENT] Generator: Fixed 5 Rounds (Randomized)
+// [UPDATED] Generator: Phase 1 League (7 Matches - Circle Method)
 function askGeneratePhase1() {
-    askConfirm("Generate Phase 1 (5 Matches Per Player)?", async () => {
+    askConfirm("Generate Phase 1 (7 Matches Per Player)?", async () => {
         const players = [...state.players];
+        const TARGET_ROUNDS = 7; // <--- Changed from 5 to 7
         
         // 1. Validation
-        if (players.length < 6) return notify("Need at least 6 players for random matchmaking", "alert-triangle");
-        if (players.length % 2 !== 0) return notify("Player count must be EVEN (e.g., 30). Add a dummy player.", "users");
-
+        // To have 7 unique opponents, you mathematically need at least 8 players.
+        if (players.length < 8) return notify("Need at least 8 players for 7 unique rounds.", "users");
+        // The Circle Method requires an EVEN number of players to work perfectly.
+        if (players.length % 2 !== 0) return notify("Player count must be EVEN. Add a dummy player.", "alert-triangle");
+        
         const batch = db.batch();
-        const history = new Set(); // Stores "ID1-ID2" strings to prevent duplicates
-        const MAX_ROUNDS = 5; // <--- STRICT LIMIT SET TO 5
-
-        // Helper: Fisher-Yates Shuffle
-        const shuffle = (array) => {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-            }
-            return array;
-        };
-
-        // Helper: Create unique key for history check (smaller ID first)
-        const getPairKey = (id1, id2) => id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
-
-        // 2. Generation Loop (Runs exactly 5 times)
-        for (let r = 1; r <= MAX_ROUNDS; r++) {
-            let isValidRound = false;
-            let attempt = 0;
+        
+        // --- ALGORITHM: THE CIRCLE METHOD (Round Robin) ---
+        // This guarantees: No Self-Play, No Repeats, Fair Schedule for 7 Rounds.
+        
+        const n = players.length;
+        const totalPossibleRounds = n - 1;
+        let allRounds = [];
+        
+        // Create an array of indices [0, 1, 2, ... n-1]
+        let indices = players.map((_, i) => i);
+        
+        // Generate ALL possible unique pairings (Full Round Robin)
+        for (let r = 0; r < totalPossibleRounds; r++) {
             let roundPairs = [];
-
-            // Retry logic: If a shuffle creates a duplicate match, reshuffle and try again
-            while (!isValidRound && attempt < 100) {
-                shuffle(players);
-                roundPairs = [];
-                let collisionFound = false;
-
-                // Try pairing adjacent players (0vs1, 2vs3, etc.)
-                for (let i = 0; i < players.length; i += 2) {
-                    const p1 = players[i];
-                    const p2 = players[i + 1];
-                    const pairKey = getPairKey(p1.id, p2.id);
-
-                    if (history.has(pairKey)) {
-                        collisionFound = true;
-                        break; // Stop this shuffle, it's bad
-                    }
-                    roundPairs.push({ p1, p2, key: pairKey });
-                }
-
-                if (!collisionFound) {
-                    isValidRound = true; // We found a clean set of matches for this round!
-                }
-                attempt++;
-            }
-
-            if (!isValidRound) {
-                return notify(`Failed to generate Round ${r}. Try reset/again.`, "x-octagon");
-            }
-
-            // 3. Commit the valid round to Batch
-            roundPairs.forEach(pair => {
-                history.add(pair.key); // Mark these two as having played
-                const mid = `p1-r${r}-${pair.p1.id}-${pair.p2.id}`;
+            
+            // Pair the top half with the bottom half
+            for (let i = 0; i < n / 2; i++) {
+                const p1Index = indices[i];
+                const p2Index = indices[n - 1 - i];
                 
-                batch.set(db.collection("matches").doc(mid), { 
-                    id: mid, 
-                    homeId: pair.p1.id, 
-                    awayId: pair.p2.id, 
-                    phase: 1, 
-                    round: r, 
+                roundPairs.push({
+                    p1: players[p1Index],
+                    p2: players[p2Index]
+                });
+            }
+            allRounds.push(roundPairs);
+            
+            // ROTATION STEP: Keep index 0 fixed, rotate the rest clockwise
+            const fixed = indices[0];
+            const moving = indices.slice(1);
+            moving.unshift(moving.pop()); // Move last element to front
+            indices = [fixed, ...moving];
+        }
+        
+        // --- SHUFFLE ROUND ORDER ---
+        // Randomize the sequence of rounds so the schedule isn't predictable
+        for (let i = allRounds.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allRounds[i], allRounds[j]] = [allRounds[j], allRounds[i]];
+        }
+        
+        // --- SELECT FIRST 7 ROUNDS ---
+        const finalRounds = allRounds.slice(0, TARGET_ROUNDS);
+        
+        // 2. Commit to Database
+        let matchCount = 0;
+        finalRounds.forEach((roundMatches, index) => {
+            const roundNum = index + 1;
+            
+            roundMatches.forEach(pair => {
+                const mid = `p1-r${roundNum}-${pair.p1.id}-${pair.p2.id}`;
+                
+                batch.set(db.collection("matches").doc(mid), {
+                    id: mid,
+                    homeId: pair.p1.id,
+                    awayId: pair.p2.id,
+                    phase: 1, // <--- Strictly Phase 1
+                    round: roundNum,
                     status: 'scheduled',
                     createdAt: Date.now()
                 });
+                matchCount++;
             });
+        });
+        
+        try {
+            await batch.commit();
+            notify(`Success! Generated 7 Rounds (${matchCount} Matches).`, "calendar");
+            setTimeout(() => location.reload(), 1500);
+        } catch (e) {
+            console.error(e);
+            notify("Database Error during generation", "x-circle");
         }
-
-        await batch.commit();
-        notify(`Success! Generated 5 Matches for ${players.length} Players.`, "calendar");
-        setTimeout(() => location.reload(), 1500);
     });
 }
 
 
-
-
 function askGeneratePhase3() {
     askConfirm("Initialize Knockout Bracket?", async () => {
-        const top8 = [...state.players].sort((a,b) => b.bounty - a.bounty).slice(0, 8);
-        if (top8.length < 8) return notify("Need 8 hunters", "alert-triangle");
         
+        // 1. Sort ALL Players by Bounty (Highest to Lowest)
+        const allRanked = [...state.players].sort((a, b) => b.bounty - a.bounty);
+        
+        // 2. Filter Candidates: Must be Top 8 AND have NO ACTIVE DEBT
+        const finalTop8 = [];
+        const disqualifiedNames = [];
+
+        for (const p of allRanked) {
+            // Stop once we have found 8 eligible players
+            if (finalTop8.length === 8) break; 
+            
+            // CHECK LOAN STATUS
+            // If they have loan data and it is active, they are disqualified
+            if (p.loan_data && p.loan_data.active) {
+                disqualifiedNames.push(p.name); 
+            } else {
+                finalTop8.push(p); // Add clean player to the bracket list
+            }
+        }
+
+        // 3. Validation: Do we actually have 8 eligible players?
+        if (finalTop8.length < 8) {
+            let msg = `Not enough eligible hunters (Found ${finalTop8.length}/8).`;
+            if (disqualifiedNames.length > 0) {
+                msg += `\n${disqualifiedNames.length} players disqualified due to Debt.`;
+            }
+            return notify(msg, "alert-triangle");
+        }
+        
+        // Alert Admin if specific high-rankers were skipped (Feedback)
+        if (disqualifiedNames.length > 0) {
+            alert(`NOTICE: The following top-ranked players were skipped due to unpaid bank loans:\n\n${disqualifiedNames.join(', ')}`);
+        }
+        
+        // 4. Generate Bracket using the FILTERED 'finalTop8' list
         const batch = db.batch();
+        
+        // Seeding Logic: 1vs8, 4vs5, 2vs7, 3vs6
         const qfSlots = [[0, 7], [3, 4], [1, 6], [2, 5]]; 
+        
         qfSlots.forEach((slot, i) => {
             const mid = `p3-qf-${i}`;
             batch.set(db.collection("matches").doc(mid), {
-                id: mid, round: 'qf', homeId: top8[slot[0]].id, awayId: top8[slot[1]].id, 
-                phase: 3, status: 'scheduled', 
+                id: mid, 
+                round: 'qf', 
+                homeId: finalTop8[slot[0]].id, // Use the Eligible Player
+                awayId: finalTop8[slot[1]].id, // Use the Eligible Player
+                phase: 3, 
+                status: 'scheduled', 
                 nextMatch: `p3-sf-${Math.floor(i/2)}`,
                 nextSlot: (i % 2 === 0) ? 'homeId' : 'awayId'
             });
         });
 
+        // Initialize Empty Semi-Finals & Final Slots
         batch.set(db.collection("matches").doc('p3-sf-0'), { id: 'p3-sf-0', round: 'sf', phase: 3, status: 'waiting', homeId: null, awayId: null, nextMatch: 'p3-fn-0', nextSlot: 'homeId' });
         batch.set(db.collection("matches").doc('p3-sf-1'), { id: 'p3-sf-1', round: 'sf', phase: 3, status: 'waiting', homeId: null, awayId: null, nextMatch: 'p3-fn-0', nextSlot: 'awayId' });
         batch.set(db.collection("matches").doc('p3-fn-0'), { id: 'p3-fn-0', round: 'fn', phase: 3, status: 'waiting', homeId: null, awayId: null });
 
-        await batch.commit();
-        notify("Bracket Live!", "trophy");
+        // 5. Commit to Database
+        try {
+            await batch.commit();
+            notify("Elite 8 Bracket Generated!", "trophy");
+        } catch (e) {
+            console.error(e);
+            notify("Error generating bracket", "x-circle");
+        }
     });
 }
 
@@ -1708,17 +1766,21 @@ async function saveMatchResult() {
         const lossMod = 1 + (sanctionPercent / 100);
         matchUpdate.sanctionApplied = sanctionPercent;
 
-        const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
-            if (isWinner) {
-                let pts = baseWin * winMod;
-                if (effectObj.multiplier) pts *= 2;
-                return Math.floor(pts);
-            } else {
-                let pts = baseLoss * lossMod;
-                if (effectObj.insurance) pts /= 2;
-                return Math.floor(pts);
-            }
-        };
+const calcPoints = (isWinner, baseWin, baseLoss, effectObj) => {
+    if (isWinner) {
+        let pts = baseWin * winMod;
+        if (effectObj.multiplier) pts *= 2;
+        return Math.floor(pts);
+    } else {
+        // Apply Late Penalty (Sanction) first
+        let pts = baseLoss * lossMod;
+        // If Insurance is active, reduce the FINAL loss by 50%
+        if (effectObj.insurance) {
+            pts = pts / 2;
+        }
+        return Math.floor(pts);
+    }
+};
 
         let winPts = 0, lossPts = 0, drawPts = -30;
         if (m.phase === 3) {
@@ -1731,17 +1793,17 @@ async function saveMatchResult() {
             winPts = 100; lossPts = -50;
         }
 
-        if (sH > sA) { 
-            hBP = calcPoints(true, winPts, lossPts, hEff);
-            aBP = calcPoints(false, winPts, lossPts, aEff);
-        } else if (sA > sH) { 
-            hBP = calcPoints(false, winPts, lossPts, hEff);
-            aBP = calcPoints(true, winPts, lossPts, aEff);
-        } else { 
-            hBP = Math.floor(drawPts * lossMod); 
-            aBP = Math.floor(drawPts * lossMod); 
-        }
-
+if (sH > sA) {
+    hBP = calcPoints(true, winPts, lossPts, hEff);
+    aBP = calcPoints(false, winPts, lossPts, aEff);
+} else if (sA > sH) {
+    hBP = calcPoints(false, winPts, lossPts, hEff);
+    aBP = calcPoints(true, winPts, lossPts, aEff);
+} else {
+    // FIXED: Draws now use calcPoints to account for Insurance
+    hBP = calcPoints(false, 0, drawPts, hEff);
+    aBP = calcPoints(false, 0, drawPts, aEff);
+}
         matchUpdate.score = { h: sH, a: sA };
         matchUpdate.resultDelta = { h: hBP, a: aBP };
 
@@ -2710,6 +2772,18 @@ function renderSchedule() {
                 </div>
                 ${countdownHTML}
         `;
+
+        // --- SCOUT BUTTON INTEGRATION (ADDED) ---
+        const hasScout = me?.active_effects?.scout;
+        const opponentId = m.homeId === myID ? m.awayId : m.homeId;
+        if (hasScout && (m.homeId === myID || m.awayId === myID) && !state.bulkMode) {
+            innerHTML += `
+                <div class="mt-3 pt-3 border-t border-white/5">
+                    <button onclick="event.stopPropagation(); useScout('${opponentId}')" class="w-full py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase flex items-center justify-center gap-2 shadow-lg hover:bg-emerald-800 transition-all">
+                        <i data-lucide="search" class="w-3 h-3"></i> Scout Opponent Intel
+                    </button>
+                </div>`;
+        }
         
         if (state.bulkMode && isSelected) {
             innerHTML += `<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"><div class="w-8 h-8 bg-gold-500 rounded-full flex items-center justify-center shadow-lg animate-pop-in"><i data-lucide="check" class="w-5 h-5 text-black"></i></div></div>`;
@@ -2791,6 +2865,7 @@ recent.appendChild(createMatchResultCard(m)));
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
 }
+
 
 
 // [UPDATED] createMatchResultCard: Shows Submitters Name
@@ -3030,41 +3105,45 @@ async function updateMatchSchedule(mid) { const d = document.getElementById('res
 async function askFactoryReset() { askConfirm("WIPE CLOUD?", async () => { const p = await db.collection("players").get(); p.forEach(d => d.ref.delete()); const m = await db.collection("matches").get(); m.forEach(d => d.ref.delete()); notify("Reset!"); }); }
 
 // --- 11. NAVIGATION ---
-// [UPDATED] switchTab: Fixed 'Arena' navigation stuck issue
+// --- 11. NAVIGATION (INSTANT LOAD) ---
 function switchTab(id) {
-    // 1. SAVE STATE: Crucial for optimized refreshUI logic
+    // 1. SAVE STATE
     localStorage.setItem('active_tab', id);
-
-    // 2. NAVIGATION UI: Handle view visibility and icon colors
+    
+    // 2. UI TOGGLE: Hide all, Show target
     const tabs = ['home', 'schedule', 'arena', 'elite', 'settings', 'rules', 'all-matches'];
     
     tabs.forEach(v => {
         const view = document.getElementById(`view-${v}`);
         const nav = document.getElementById(`nav-${v}`);
-        
-        // Hide the view
         if (view) view.classList.add('hidden');
-        
-        // Deactivate the nav icon
         if (nav) nav.classList.replace('text-emerald-500', 'text-slate-500');
     });
-
+    
     const activeView = document.getElementById(`view-${id}`);
     const activeNav = document.getElementById(`nav-${id}`);
     
-    // Show the target view
     if (activeView) activeView.classList.remove('hidden');
-    // Activate the nav icon
     if (activeNav) activeNav.classList.replace('text-slate-500', 'text-emerald-500');
     
-    // 3. TARGETED RENDERING: Trigger specific functions for the active tab
+    // 3. FORCE RENDER (DIRECT CALL FOR SPEED)
+    // We do NOT use debounce here because the user wants to see the page NOW.
     if (id === 'arena') renderBrokerBoard();
     if (id === 'settings') renderPlayerDashboard();
     if (id === 'elite') renderEliteBracket();
     if (id === 'schedule') renderSchedule();
+    if (id === 'home') {
+        renderTop5Leaderboard();
+        renderBettingAnalytics();
+        closeAllSections();
+    }
     
-    // 4. GLOBAL REFRESH: Trigger the optimized refreshUI
+    // 4. GLOBAL REFRESH (Background updates)
+    // Runs calculation for headers/pools but doesn't block the view switching
     refreshUI();
+    
+    // Scroll to top
+    if (activeView) activeView.scrollTop = 0;
     
     // Refresh icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -3490,12 +3569,11 @@ async function buyShopItem(key) {
     const me = state.players.find(p => p.id === myID);
     const item = SHOP_ITEMS[key];
 
-    // 1. Check if already purchased MANUALLY
+    // 1. Validation Checks
     if (me.purchase_history && me.purchase_history[key]) {
         return notify("Sold Out: You hit the purchase limit.", "alert-circle");
     }
 
-    // 2. Check if they already hold one (from Pass) - Prevent Hoarding
     if ((me.inventory && me.inventory[key] > 0)) {
          return notify("Activate your current item first!", "layers");
     }
@@ -3504,36 +3582,46 @@ async function buyShopItem(key) {
     
     try {
         const batch = db.batch();
-        const ref = db.collection("players").doc(myID);
+        const playerRef = db.collection("players").doc(myID);
+        // FIX: Define Pool Reference explicitly
+        const poolRef = db.collection("system").doc("pool"); 
 
         const logEntry = {
             id: `TX_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             ts: Date.now(),
-            amount: -item.price, // Negative amount for cost
+            amount: -item.price,
             cat: 'Shop',
             desc: `Purchased ${item.name}`
         };
         
-        // 3. Deduct Price
-        batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-item.price) });
-        
-        // 4. Add to Inventory
-        batch.update(ref, { [`inventory.${key}`]: 1 });
-        
-        // 5. Mark as purchased manually (This triggers "Sold Out" after use)
-        batch.update(ref, { [`purchase_history.${key}`]: true });
+        // 3. Deduct Price from Player
+        batch.update(playerRef, { bounty: firebase.firestore.FieldValue.increment(-item.price) });
 
-        // 6. Save Log
-        batch.update(ref, { 
+        // 4. Update Pool BP (THE FIX)
+        // Use 'set' with 'merge: true' instead of 'update'. 
+        // This prevents crashes if the pool document is missing/glitched.
+        batch.set(poolRef, { 
+            poolBP: firebase.firestore.FieldValue.increment(item.price) 
+        }, { merge: true });
+
+        // 5. Add to Inventory
+        batch.update(playerRef, { [`inventory.${key}`]: 1 });
+        
+        // 6. Mark as purchased manually
+        batch.update(playerRef, { [`purchase_history.${key}`]: true });
+
+        // 7. Save Log
+        batch.update(playerRef, { 
             bp_logs: firebase.firestore.FieldValue.arrayUnion(logEntry) 
         });
         
+        // COMMIT THE TRANSACTION
         await batch.commit();
         
         notify(`${item.name} Purchased!`, "shopping-bag");
         document.getElementById('modal-shop-details').classList.add('hidden');
     } catch (e) { 
-        console.error("Shop Error:", e);
+        console.error("Shop Error:", e); // Check your browser console (F12) if this happens!
         notify("Transaction Failed", "x-circle"); 
     }
 }
@@ -3601,7 +3689,6 @@ async function depositToVault() {
         logTransaction(myID, -amount, 'Vault', 'Locked in Vault');
 
     notify(`${amount} BP Locked in Vault!`, "lock");
-        notify(`${amount} BP Locked in Vault!`, "lock");
         document.getElementById('modal-vault').classList.add('hidden');
     } catch (e) { notify("Vault Error", "x-circle"); }
 }
@@ -3625,7 +3712,6 @@ async function checkVaultStatus() {
                 await batch.commit();
                 logTransaction(myID, me.vault_data.amount, 'Vault', 'Funds Unlocked');
 
-    notify("Vault Unlocked: Funds Returned", "unlock");
                 notify("Vault Unlocked: Funds Returned", "unlock");
             } catch (e) { console.error("Vault Return Error", e); }
         }
@@ -3633,42 +3719,73 @@ async function checkVaultStatus() {
 }
 
 // --- SCOUT LOGIC ---
+// --- UPDATED SCOUT LOGIC ---
 async function useScout(targetId) {
     const t = state.players.find(p => p.id === targetId);
     if (!t) return;
-
-    // 1. Gather Intelligence
+    
+    // 1. Gather Intelligence & Calculate Stats
     const winRate = t.mp > 0 ? Math.floor((t.wins / t.mp) * 100) : 0;
+    const currentStreak = calculateWinStreak(t.id);
+    const avgGoals = t.mp > 0 ? (t.goals / t.mp).toFixed(1) : "0.0";
     
-    // 2. Display Report (Using standard Alert for simplicity, or Notify)
-    // Formatting a clean report
-    const reportMsg = `
-[ SCOUT REPORT: ${t.name.toUpperCase()} ]
---------------------------------
-• Win Rate:      ${winRate}%
-• Total Matches: ${t.mp}
-• Record:        ${t.wins}W - ${t.draws}D - ${t.losses}L
-• Current BP:    ${t.bounty}
-• P2 Contracts:  High(${t.p2High || 0}/3) | Std(${t.p2Std || 0}/2)
---------------------------------
-Confirming challenge is now safer.
-`;
+    // 2. Identify Ranking
+    const sorted = getSmartSortedPlayers();
+    const rank = sorted.findIndex(p => p.id === t.id) + 1;
     
-    alert(reportMsg); // Show info to user immediately
-
-    // 3. Consume the Item from Database
+    // 3. Construct Phase-Specific Intelligence HTML
+    let phaseIntel = "";
+    if (state.activePhase === 1) {
+        phaseIntel = `LEAGUE RANK: #${rank}<br>ESTIMATED THREAT: ${rank <= 5 ? 'HIGH' : 'MODERATE'}`;
+    } else if (state.activePhase === 2) {
+        phaseIntel = `MARKET RANK: #${rank}<br>CONTRACTS: HIGH(${t.p2High || 0}/3) | STD(${t.p2Std || 0}/2)`;
+    } else if (state.activePhase === 3) {
+        phaseIntel = `ELITE SEED: #${rank}<br>STATUS: ${currentStreak >= 3 ? 'ON FIRE 🔥' : 'STABLE'}`;
+    }
+    
+    // 4. POPULATE THE NEW MODAL UI
+    document.getElementById('scout-target-name').innerText = t.name;
+    document.getElementById('scout-target-bp').innerText = `${(t.bounty || 0).toLocaleString()} BP`;
+    
+    // Use your existing avatar generator
+    document.getElementById('scout-target-avatar').innerHTML = getAvatarUI(t, "w-12", "h-12");
+    
+    document.getElementById('scout-win-rate').innerText = `${winRate}%`;
+    document.getElementById('scout-streak').innerHTML = `${currentStreak} <span class="text-[8px] text-slate-500">WIN STREAK</span>`;
+    if (currentStreak >= 3) document.getElementById('scout-streak').innerHTML += ` 🔥`;
+    
+    document.getElementById('scout-goals').innerText = avgGoals;
+    document.getElementById('scout-record').innerText = `${t.wins}W - ${t.draws}D - ${t.losses}L`;
+    
+    document.getElementById('scout-phase-info').innerHTML = phaseIntel;
+    
+    // 5. Show the Modal
+    document.getElementById('modal-scout-report').classList.remove('hidden');
+    
+    // Initialize Icons inside the modal
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    // 6. Consume the Item from Database
     const myID = localStorage.getItem('slc_user_id');
     try {
         await db.collection("players").doc(myID).update({
             "active_effects.scout": false
         });
-        notify("Scout Report Complete. Item Consumed.", "check-circle");
-        renderBrokerBoard(); // Refresh UI to remove the button
-    } catch(e) {
-        console.error(e);
+        
+        // We don't need a toast here because the modal opening is the feedback
+        // But we refresh UI to remove the button from the background list
+        const activeTab = localStorage.getItem('active_tab');
+        if (activeTab === 'arena') renderBrokerBoard();
+        else if (activeTab === 'schedule') renderSchedule();
+        else if (activeTab === 'elite') renderEliteBracket();
+        else refreshUI();
+        
+    } catch (e) {
+        console.error("Scout Consumption Error:", e);
         notify("Error consuming item", "x-circle");
     }
 }
+
 
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
@@ -4484,99 +4601,196 @@ function renderTopScorers() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-// --- UPDATE YOUR EXISTING REFRESH UI FUNCTION ---
+function updatePassUI(me) {
+    const purchaseView = document.getElementById('pass-purchase-view');
+    const activeView = document.getElementById('pass-active-view');
+    
+    if (!purchaseView || !activeView) return;
+    
+    // 1. STRICT LOCKDOWN: If pass is active, hide purchase options immediately
+    if (me && me.passType) {
+        purchaseView.classList.add('hidden');
+        activeView.classList.remove('hidden');
+        
+        const round = me.passRound || 0;
+        const totalRounds = 10;
+        const progress = (round / totalRounds) * 100;
+        
+        // Update Header & Progress Bar
+        document.getElementById('current-round-text').innerText = round;
+        document.getElementById('pass-progress-bar').style.width = `${progress}%`;
+        
+        const tag = document.getElementById('active-pass-tag');
+        tag.innerText = `${me.passType.toUpperCase()} PASS ACTIVE`;
+        tag.className = me.passType === 'premium' ?
+            'text-[9px] font-black px-3 py-1 rounded-full uppercase bg-gold-500 text-slate-950 shadow-lg shadow-gold-500/20' :
+            'text-[9px] font-black px-3 py-1 rounded-full uppercase bg-blue-600 text-white';
+        
+        // 2. GENERATE PREMIUM HORIZONTAL REWARD TRACK
+        const trackContainer = document.getElementById('pass-reward-track');
+        if (trackContainer) {
+            trackContainer.innerHTML = '';
+            const rewards = PASS_REWARDS[me.passType];
+            
+            rewards.forEach((item, index) => {
+                const rNum = index + 1;
+                const isClaimed = rNum <= round;
+                const isNext = rNum === round + 1;
+                
+                let rewardName = "";
+                let icon = "gift";
+                let colorClass = "text-slate-500";
+                
+                // Resolve Reward Details from existing Configs
+                if (item.type === 'item') {
+                    const itemData = SHOP_ITEMS[item.id];
+                    rewardName = itemData.name;
+                    icon = itemData.icon;
+                    colorClass = "text-emerald-400";
+                } else if (item.type === 'bp') {
+                    rewardName = "BP";
+                    icon = "coins";
+                    colorClass = "text-gold-400";
+                } else if (item.type === 'badge') {
+                    rewardName = "TITLE";
+                    icon = "award";
+                    colorClass = "text-blue-400";
+                } else if (item.type === 'vault') {
+                    rewardName = "KEY";
+                    icon = "lock";
+                    colorClass = "text-purple-400";
+                }
+                
+                trackContainer.innerHTML += `
+                    <div class="flex-shrink-0 w-20 flex flex-col items-center gap-2 ${!isClaimed && !isNext ? 'opacity-40' : 'opacity-100'}">
+                        <div class="relative w-14 h-14 rounded-2xl ${isClaimed ? 'bg-emerald-500/10 border-emerald-500/30' : (isNext ? 'bg-slate-800 border-gold-500/50 animate-pulse' : 'bg-slate-900 border-white/5')} border-2 flex flex-col items-center justify-center transition-all">
+                            <i data-lucide="${icon}" class="w-5 h-5 ${isClaimed || isNext ? colorClass : 'text-slate-700'}"></i>
+                            <span class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-950 border border-white/10 text-[7px] flex items-center justify-center font-black text-white">${rNum}</span>
+                            ${isClaimed ? '<div class="absolute -bottom-1 bg-emerald-500 rounded-full p-0.5"><i data-lucide="check" class="w-2 h-2 text-white"></i></div>' : ''}
+                        </div>
+                        <p class="text-[6px] font-black uppercase tracking-widest text-center leading-none ${isNext ? 'text-gold-500' : 'text-slate-500'}">${rewardName}</p>
+                    </div>
+                `;
+            });
+        }
+        
+        // Update Remaining Matches
+        const myID = localStorage.getItem('slc_user_id');
+        const matchesRemaining = state.matches.filter(m =>
+            (m.homeId === myID || m.awayId === myID) && m.status === 'scheduled'
+        ).length;
+        
+        const remainingTag = document.getElementById('matches-remaining-tag');
+        if (remainingTag) remainingTag.innerText = `${matchesRemaining} Matches Left`;
+        
+    } else {
+        // Show Purchase View if no pass owned
+        purchaseView.classList.remove('hidden');
+        activeView.classList.add('hidden');
+    }
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+// --- UPDATED REFRESH UI (INSTANT PASS FIX) ---
 function refreshUI() {
     const rawID = localStorage.getItem('slc_user_id') || "";
     const myID = rawID.toUpperCase();
+    const activeTab = localStorage.getItem('active_tab') || 'home';
     
-    // 1. Calculate streaks (Data preparation)
-    state.players.forEach(p => {
-        p.currentStreak = calculateWinStreak(p.id);
-    });
+    // 1. Data Preparation (Streaks)
+    if (activeTab === 'home' || activeTab === 'schedule') {
+        state.players.forEach(p => {
+            p.currentStreak = calculateWinStreak(p.id);
+        });
+    }
     
+    // 2. Find Current Player (Robust Lookup)
     const myPlayer = state.players.find(p => p?.id && p.id.toUpperCase() === myID);
-    
-    // 2. Update HUD (Always visible elements)
-    const userBountyEl = document.getElementById('user-bounty-display');
-    if (userBountyEl) {
-        if (state.isAdmin) {
-            userBountyEl.innerText = "ADMIN MODE";
-        } else if (myPlayer) {
-            userBountyEl.innerText = `${(Number(myPlayer.bounty) || 0).toLocaleString()} BP`;
+    if (myPlayer) {
+        checkLoanInterest(myPlayer); // <--- Add this line
+        
+        // Update Dashboard Badge
+        const bankStatusEl = document.getElementById('bank-dashboard-status');
+        if (bankStatusEl) {
+            if (myPlayer.loan_data && myPlayer.loan_data.active) {
+                bankStatusEl.innerText = `DEBT: ${Math.floor(myPlayer.loan_data.amountDue)} BP`;
+                bankStatusEl.classList.add('text-rose-500', 'animate-pulse');
+            } else {
+                bankStatusEl.innerText = "GET INSTANT FUNDS";
+                bankStatusEl.classList.remove('text-rose-500', 'animate-pulse');
+            }
         }
     }
-    
-    // --- UPDATED: TOTAL POOL CALCULATION (Players + House) ---
-    // Calculate Sum of All Player Wallets
-    const totalPlayerMoney = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
-    // Get House Money from State (set by listenToCloud)
-    const houseMoney = state.systemPool || 0;
-    
-    // Total Economy = Players + House
-    const totalEconomy = totalPlayerMoney + houseMoney;
-    
-    const poolEl = document.getElementById('total-pool-display');
-    if (poolEl) {
-        poolEl.innerText = `Pool: ${totalEconomy.toLocaleString()}`;
-    }
-    // ---------------------------------------------------------
-    
-    // Header HUD Data Injection
+    // 3. Update HUD (Header)
+    const userBountyEl = document.getElementById('user-bounty-display');
     const headerAvatar = document.getElementById('header-user-avatar');
     const phaseInd = document.getElementById('phase-indicator');
     const idBadge = document.getElementById('user-id-badge');
+    const poolEl = document.getElementById('total-pool-display');
+    
+    // Safe HUD Updates
+    if (userBountyEl) {
+        if (state.isAdmin) userBountyEl.innerText = "ADMIN MODE";
+        else if (myPlayer) userBountyEl.innerText = `${(Number(myPlayer.bounty) || 0).toLocaleString()} BP`;
+    }
+    
+if (poolEl) {
+    const totalPlayerMoney = state.players.reduce((sum, p) => sum + (Number(p?.bounty) || 0), 0);
+    const houseMoney = state.systemPool || 0;
+    // This adds them together, so transfers result in 0 change
+    poolEl.innerText = `Pool: ${(totalPlayerMoney + houseMoney).toLocaleString()}`;
+}
     
     if (headerAvatar && myPlayer) headerAvatar.innerHTML = getAvatarUI(myPlayer, "w-full", "h-full", "text-[10px]");
     if (phaseInd) phaseInd.innerText = `P${state.activePhase}`;
     if (idBadge && myPlayer) idBadge.innerText = myPlayer.id;
     
-    // 3. TAB-BASED SELECTIVE RENDERING (CRITICAL FOR PERFORMANCE)
-    // We check which section is currently "visible" to the user
-    const activeTab = localStorage.getItem('active_tab') || 'home';
-    
+    // 4. MAIN RENDERING LOGIC
     try {
-        // Global components that run regardless of tab
         renderNewsTicker();
         checkPhaseLocks();
         checkVaultStatus();
         
-        // Section-specific rendering
+        // --- 🟢 INSTANT PASS UI FIX (PRIORITY 1) ---
+        // We call this unconditionally. Even if on Settings tab, Home HTML exists in background.
+        // We also check if updatePassUI is defined to prevent errors.
+        if (myPlayer && typeof updatePassUI === 'function') {
+            updatePassUI(myPlayer);
+        }
+        // ------------------------------------------
+        
         if (activeTab === 'home') {
-            renderTop5Leaderboard();
-            renderBettingAnalytics();
+            // Leaderboards
+            const top5El = document.getElementById('top5-leaderboard-container');
+            if (top5El && !top5El.classList.contains('hidden')) renderTop5Leaderboard();
             
-            // Check for popups only on home to prevent interruption
+            // Analytics
+            const statsBox = document.getElementById('betting-stats-box');
+            if (statsBox && !statsBox.classList.contains('hidden')) renderBettingAnalytics();
+            
+            const ledgerSection = document.getElementById('betting-analytics-section');
+            if (ledgerSection && !ledgerSection.classList.contains('hidden')) renderBettingAnalytics();
+            
+            // Modals & Alerts
             const isMatchAlertOpen = !document.getElementById('modal-match-alert').classList.contains('hidden');
             if (!isMatchAlertOpen) {
                 checkPassPromo();
                 checkPriorityMatches();
             }
+            
+            // Sub-sections (Shop, Scorers)
+            const shopSec = document.getElementById('shop-section');
+            if (shopSec && !shopSec.classList.contains('hidden')) renderShop();
+            
+            const scorerSec = document.getElementById('scorers-full-section');
+            if (scorerSec && !scorerSec.classList.contains('hidden')) renderTopScorers();
         }
-        else if (activeTab === 'schedule') {
-            renderSchedule();
-        }
-        else if (activeTab === 'arena') {
-            renderBrokerBoard();
-        }
-        else if (activeTab === 'elite') {
-            renderEliteBracket();
-        }
-        else if (activeTab === 'settings') {
-            renderPlayerDashboard();
-        }
+        else if (activeTab === 'schedule') renderSchedule();
+        else if (activeTab === 'arena') renderBrokerBoard();
+        else if (activeTab === 'elite') renderEliteBracket();
+        else if (activeTab === 'settings') renderPlayerDashboard();
+        else if (activeTab === 'all-matches') openFullHistory();
         
-        // Conditional rendering for overlays/sections
-        const shopSection = document.getElementById('shop-section');
-        if (shopSection && !shopSection.classList.contains('hidden')) {
-            renderShop();
-        }
-        
-        const scorersSection = document.getElementById('scorers-full-section');
-        if (scorersSection && !scorersSection.classList.contains('hidden')) {
-            renderTopScorers();
-        }
-        
-        // Refresh Lucide icons
         if (typeof lucide !== 'undefined') lucide.createIcons();
         
     } catch (err) {
@@ -4821,6 +5035,51 @@ async function openBPHistory() {
 // ==========================================
 // [ADMIN TOOL] SMART HISTORY SYNC (NO DUPLICATES)
 // ==========================================
+// ==========================================
+// ADMIN TOOL: SYNC LEGACY PURCHASES
+// ==========================================
+async function syncLegacyPurchases() {
+    askConfirm("Repair and Sync all item purchase history? This ensures 'Sold Out' status for owned items.", async () => {
+        try {
+            const batch = db.batch();
+            let repairCount = 0;
+            
+            state.players.forEach(p => {
+                const inv = p.inventory || {};
+                const history = p.purchase_history || {};
+                let hasChanges = false;
+                let updateData = {};
+                
+                // Loop through known shop items
+                Object.keys(SHOP_ITEMS).forEach(itemKey => {
+                    // If player has the item in inventory but it's not marked in their history
+                    if (inv[itemKey] > 0 && !history[itemKey]) {
+                        updateData[`purchase_history.${itemKey}`] = true;
+                        hasChanges = true;
+                    }
+                });
+                
+                if (hasChanges) {
+                    batch.update(db.collection("players").doc(p.id), updateData);
+                    repairCount++;
+                }
+            });
+            
+            if (repairCount > 0) {
+                await batch.commit();
+                notify(`Repaired ${repairCount} player records!`, "check-circle");
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                notify("No legacy data issues found.", "info");
+            }
+            
+        } catch (e) {
+            console.error("Legacy Sync Error:", e);
+            notify("Sync Failed", "x-circle");
+        }
+    });
+}
+
 async function forceRebuildHistory() {
     askConfirm("SMART SYNC: Fill missing history without duplicates?", async () => {
         const notifId = notify("Analyzing Data...", "loader");
@@ -5246,3 +5505,297 @@ async function adminRepairWallet(targetId) {
         alert("Error updating wallet");
     }
 }
+// SLC BANKING SYSTEM (UPDATED: PARTIAL PAY)
+// ==========================================
+// --- NEW HELPER: GET LOAN LIMIT BASED ON BP ---
+function getLoanLimit(bp) {
+    if (bp > 1500) return 1500;
+    if (bp > 1000) return 1200;
+    if (bp > 800) return 800;
+    return 500;
+}
+function openBankModal() {
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    if (!me) return notify("Login required", "lock");
+    
+    // Run Calculation Check
+    checkLoanInterest(me);
+    
+    const statusArea = document.getElementById('bank-status-area');
+    const actionArea = document.getElementById('bank-action-area');
+    const loan = me.loan_data || { active: false };
+    const isPhase3Locked = state.activePhase >= 3;
+    
+    if (loan.active) {
+        // --- EXISTING ACTIVE LOAN UI (Keep Repayment Logic Same) ---
+        const now = Date.now();
+        const deadline = new Date(loan.deadline);
+        const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+        const isOverdue = daysLeft < 0;
+        const totalDue = Math.floor(loan.amountDue);
+        
+        let displayPrincipal = loan.principal;
+        let displayInterest = Math.floor(loan.amountDue - loan.principal);
+        
+        if (totalDue < loan.principal) {
+            displayPrincipal = totalDue;
+            displayInterest = 0;
+        }
+        
+        statusArea.innerHTML = `
+            <div class="bg-slate-950 p-4 rounded-2xl border border-rose-500/30 relative overflow-hidden mb-4">
+                <div class="absolute top-0 left-0 w-full h-1 bg-rose-500 animate-pulse"></div>
+                <p class="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Debt Owed</p>
+                <p class="text-3xl font-black text-white text-glow-rose">${totalDue.toLocaleString()} BP</p>
+
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                    <div class="bank-stat-box">
+                        <span class="block text-[7px] text-slate-500 uppercase">Principal</span>
+                        <span class="text-[9px] font-bold text-white">${displayPrincipal} BP</span>
+                    </div>
+                    <div class="bank-stat-box">
+                        <span class="block text-[7px] text-slate-500 uppercase">Interest</span>
+                        <span class="text-[9px] font-bold text-rose-400">+${displayInterest} BP</span>
+                    </div>
+                </div>
+
+                <div class="mt-3 flex items-center justify-center gap-2">
+                    <i data-lucide="clock" class="w-3 h-3 ${isOverdue ? 'text-rose-500' : 'text-gold-500'}"></i>
+                    <span class="text-[9px] font-black uppercase ${isOverdue ? 'text-rose-500' : 'text-gold-500'}">
+                        ${isOverdue ? `OVERDUE BY ${Math.abs(daysLeft)} DAYS` : `Due in ${daysLeft} Days`}
+                    </span>
+                </div>
+            </div>
+        `;
+        
+        const maxAffordable = Math.min(me.bounty, totalDue);
+        
+        actionArea.innerHTML = `
+            <div class="flex justify-between items-center px-2 mb-2">
+                <span class="text-[8px] text-slate-500 font-bold uppercase">Your Wallet</span>
+                <span class="text-[9px] font-black ${me.bounty > 0 ? 'text-emerald-400' : 'text-rose-500'}">${me.bounty.toLocaleString()} BP</span>
+            </div>
+
+            <div class="relative mb-3">
+                <input type="number" id="bank-repay-input" placeholder="Enter Amount..."
+                    class="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white font-bold text-center outline-none focus:border-rose-500 transition-colors"
+                    max="${maxAffordable}">
+
+                <button onclick="setMaxRepayment(${maxAffordable})"
+                    class="absolute right-2 top-2 bottom-2 bg-white/5 border border-white/5 hover:bg-white/10 text-[7px] px-3 rounded-lg uppercase font-black text-slate-400 hover:text-white transition-all">
+                    Max
+                </button>
+            </div>
+
+            <button onclick="repayLoan()"
+                class="w-full py-4 bg-emerald-600 text-white font-black rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/20 active:scale-95 transition-all">
+                MAKE PAYMENT
+            </button>
+        `;
+        
+    } else {
+        // --- NEW LOAN REQUEST UI (UPDATED) ---
+        if (isPhase3Locked) {
+            statusArea.innerHTML = `
+                <div class="py-8 text-center opacity-50">
+                    <i data-lucide="lock" class="w-12 h-12 text-slate-600 mx-auto mb-3"></i>
+                    <p class="text-[9px] text-slate-500 font-black uppercase">Loans Disabled in Phase 3</p>
+                </div>`;
+            actionArea.innerHTML = ``;
+        } else {
+            // 1. Calculate Limit based on current Bounty
+            const maxLoan = getLoanLimit(me.bounty);
+            
+            statusArea.innerHTML = `
+                <div class="bg-slate-950 p-4 rounded-2xl border border-white/5 mb-4">
+                    <div class="flex justify-between items-end mb-2">
+                        <p class="text-[8px] text-slate-500 font-black uppercase tracking-widest">Credit Limit</p>
+                        <p class="text-[8px] text-blue-400 font-bold uppercase">Based on ${me.bounty} BP</p>
+                    </div>
+                    <p class="text-3xl font-black text-emerald-400">${maxLoan} BP</p>
+                    <div class="mt-3 bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
+                        <p class="text-[7px] text-rose-400 font-bold uppercase leading-tight">
+                            Daily Rates: 10% (Day 1-3) • 15% (Day 4-6) • 25% (Day 7+)
+                        </p>
+                    </div>
+                </div>
+            `;
+            
+            actionArea.innerHTML = `
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-[7px] text-slate-500 font-black uppercase ml-1">Loan Amount (Max: ${maxLoan})</label>
+                        <input type="number" id="loan-amount-input" value="${maxLoan}" max="${maxLoan}" min="100" oninput="updateLoanCalculator()" 
+                            class="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white font-bold outline-none focus:border-emerald-500 text-center">
+                    </div>
+                    
+                    <div>
+                        <label class="text-[7px] text-slate-500 font-black uppercase ml-1">Duration (Days)</label>
+                        <div class="flex items-center gap-2">
+                             <input type="range" id="loan-days-slider" min="1" max="10" value="7" oninput="updateLoanCalculator()" class="flex-1 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                             <span id="loan-days-display" class="w-8 text-[9px] font-black text-white text-center">7</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-800/50 p-3 rounded-xl border border-white/5 text-center">
+                        <p class="text-[7px] text-slate-500 font-black uppercase">Projected Repayment</p>
+                        <p id="loan-projection-total" class="text-xl font-black text-white mt-1">0 BP</p>
+                        <p class="text-[7px] text-rose-400 font-bold" id="loan-projection-interest">+0 Interest</p>
+                    </div>
+
+                    <button onclick="takeLoan()" class="w-full py-4 bg-rose-600 text-white font-black rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-rose-900/20 active:scale-95 transition-all">
+                        CONFIRM LOAN
+                    </button>
+                </div>
+            `;
+            
+            // Trigger calculation immediately to set initial values
+            setTimeout(() => updateLoanCalculator(), 100);
+        }
+    }
+    
+    openModal('modal-bank');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// --- NEW: LIVE LOAN CALCULATOR ---
+function updateLoanCalculator() {
+    const amountInput = document.getElementById('loan-amount-input');
+    const daysInput = document.getElementById('loan-days-slider');
+    const daysDisplay = document.getElementById('loan-days-display');
+    const totalDisplay = document.getElementById('loan-projection-total');
+    const interestDisplay = document.getElementById('loan-projection-interest');
+    
+    if (!amountInput || !daysInput) return;
+    
+    // Get Values
+    let principal = parseInt(amountInput.value) || 0;
+    let days = parseInt(daysInput.value) || 1;
+    
+    // Enforce Max Limit Logic for UI validation
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const limit = getLoanLimit(me ? me.bounty : 0);
+    
+    if (principal > limit) {
+        principal = limit;
+        amountInput.value = limit; // Auto-correct input
+    }
+    
+    daysDisplay.innerText = days;
+    
+    // Calculate Projected Interest (Simulate the Daily Compound Loop)
+    let projectedTotal = principal;
+    
+    for (let d = 1; d <= days; d++) {
+        let rate = 0.10; // Default 10%
+        if (d > 6) rate = 0.25; // Day 7+
+        else if (d > 3) rate = 0.15; // Day 4-6
+        
+        // Interest calculation
+        projectedTotal += Math.ceil(projectedTotal * rate);
+    }
+    
+    const interestOnly = projectedTotal - principal;
+    
+    // Update UI
+    totalDisplay.innerText = `${projectedTotal.toLocaleString()} BP`;
+    interestDisplay.innerText = `+${interestOnly.toLocaleString()} Interest`;
+}
+
+// Helper for the "Max" button
+function setMaxRepayment(amount) {
+    const input = document.getElementById('bank-repay-input');
+    if (input) input.value = amount;
+}
+
+// 2. REPAY LOAN LOGIC (UPDATED)
+async function repayLoan() {
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    const loan = me.loan_data;
+    
+    // 1. Validations
+    if (!loan || !loan.active) return;
+    
+    const inputEl = document.getElementById('bank-repay-input');
+    const payAmount = parseInt(inputEl.value);
+    
+    if (isNaN(payAmount) || payAmount <= 0) return notify("Enter a valid amount", "alert-circle");
+    if (payAmount > me.bounty) return notify("Insufficient Funds", "alert-triangle");
+    
+    // Determine if this is a Full Payoff or Partial
+    // We use a small epsilon for float comparison safety, or just integer logic
+    const totalDue = Math.floor(loan.amountDue);
+    const isFullPayment = payAmount >= totalDue;
+    const finalPayment = isFullPayment ? totalDue : payAmount;
+    
+    // UI Confirmation Message
+    const msg = isFullPayment ?
+        `Clear full debt for ${finalPayment} BP?` :
+        `Pay ${finalPayment} BP towards debt?`;
+    
+    askConfirm(msg, async () => {
+        try {
+            const batch = db.batch();
+            const ref = db.collection("players").doc(myID);
+            const poolRef = db.collection("system").doc("pool");
+            
+            // A. Deduct from Player Wallet
+            batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(-finalPayment) });
+            
+            // B. Add to Global Pool
+            batch.update(poolRef, { poolBP: firebase.firestore.FieldValue.increment(finalPayment) });
+            
+            // C. Update Loan Data
+            if (isFullPayment) {
+                // Scenario 1: Loan Cleared
+                batch.update(ref, { loan_data: { active: false } });
+                logTransaction(myID, -finalPayment, 'Bank', 'Debt Cleared', batch);
+            } else {
+                // Scenario 2: Partial Payment
+                // We reduce the amountDue. 
+                // Note: We DO NOT reset dayCount or lastInterestApplied. The interest clock keeps ticking.
+                const newBalance = loan.amountDue - finalPayment;
+                batch.update(ref, {
+                    "loan_data.amountDue": newBalance
+                });
+                logTransaction(myID, -finalPayment, 'Bank', 'Partial Repayment', batch);
+            }
+            
+            await batch.commit();
+            
+            notify(isFullPayment ? "Debt Cleared! Freedom!" : `Paid ${finalPayment} BP`, "check-circle");
+            closeModal('modal-bank');
+            refreshUI();
+            
+        } catch (e) {
+            console.error(e);
+            notify("Repayment Error", "x-circle");
+        }
+    });
+}
+
+// 1. TAKE LOAN LOGIC
+// --- UPDATED TAKE LOAN ACTION ---
+async function takeLoan() {
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    
+    if (state.activePhase >= 3) return notify("Loans locked in Phase 3", "lock");
+    if (me.loan_data && me.loan_data.active) return notify("Repay existing loan first", "alert-circle");
+    
+    // Get User Inputs
+    const amountVal = document.getElementById('loan-amount-input').value;
+    const daysVal = document.getElementById('loan-days-slider').value;
+    
+    const amount = parseInt(amountVal);
+    const durationDays = parseInt(daysVal);
+    
+    // Validate
+    const limit = getLoanLimit(me.bounty);
+    
+    if (isNaN(amount) || amount <= 0) return notify("Invalid Amount", "alert-circle");
+    if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
+    if (isNaN(durationDays) || d
