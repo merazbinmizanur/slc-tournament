@@ -983,3 +983,49 @@ button[onclick="showStandingsPreview()"] {
                       linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
 }
+/* Pass Track Styling */
+#pass-reward-track {
+    mask-image: linear-gradient(to right, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
+}
+
+.snap-x {
+    scroll-snap-type: x mandatory;
+}
+
+#pass-reward-track > div {
+    scroll-snap-align: start;
+}
+
+/* Premium Glow for Active Pass */
+#pass-active-view::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: shimmer-swipe 3s infinite;
+}
+
+@keyframes shimmer-swipe {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+/* Banking Styles */
+.moving-border-rose::before {
+    background: conic-gradient(transparent, #f43f5e, #881337, transparent 40%);
+}
+
+.text-glow-rose {
+    text-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
+}
+
+.bank-stat-box {
+    background: rgba(2, 6, 23, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 10px;
+    text-align: center;
+}
