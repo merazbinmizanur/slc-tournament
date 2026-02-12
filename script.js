@@ -5780,22 +5780,106 @@ async function repayLoan() {
 // 1. TAKE LOAN LOGIC
 // --- UPDATED TAKE LOAN ACTION ---
 async function takeLoan() {
-    const myID = localStorage.getItem('slc_user_id');
-    const me = state.players.find(p => p.id === myID);
+  const myID = localStorage.getItem('slc_user_id');
+  const me = state.players.find(p => p.id === myID);
+  
+  if (state.activePhase >= 3) return notify("Loans locked in Phase 3", "lock");
+  if (me.loan_data && me.loan_data.active) return notify("Repay existing loan first", "alert-circle");
+  
+  // Get User Inputs
+  const amountVal = document.getElementById('loan-amount-input').value;
+  const daysVal = document.getElementById('loan-days-slider').value;
+  
+  const amount = parseInt(amountVal);
+  const durationDays = parseInt(daysVal);
+  
+  // Validate
+  const limit = getLoanLimit(me.bounty);
+  
+  if (isNaN(amount) || amount <= 0) return notify("Invalid Amount", "alert-circle");
+  if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
+  if (isNaN(durationDays) || durationDays < 1) return notify("Invalid Duration", "clock");
+  
+  const now = Date.now();
+  const deadline = now + (durationDays * 24 * 60 * 60 * 1000);
+  
+  askConfirm(`Borrow ${amount} BP for ${durationDays} Days?`, async () => {
+    try {
+      const batch = db.batch();
+      const ref = db.collection("players").doc(myID);
+      
+      // Give Money
+      batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(amount) });
+      
+      // Set Loan Data
+      batch.update(ref, {
+        loan_data: {
+          active: true,
+          principal: amount,
+          amountDue: amount, // Starts at principal, interest adds daily via checkLoanInterest
+          takenAt: now,
+          deadline: deadline,
+          lastInterestApplied: now,
+          dayCount: 0
+        }
+      });
+      
+      // Log it
+      logTransaction(myID, amount, 'Bank', `Loan Taken (${durationDays}d)`, batch);
+      
+      await batch.commit();
+      notify(`Loan Received: +${amount} BP`, "landmark");
+      closeModal('modal-bank');
+      refreshUI();
+      
+    } catch (e) {
+      console.error(e);
+      notify("Banking Error", "x-circle");
+    }
+  });
+}
+
+// 3. AUTOMATIC INTEREST CALCULATOR (Run on Refresh)
+async function checkLoanInterest(player) {
+  if (!player.loan_data || !player.loan_data.active) return;
+  
+  const loan = player.loan_data;
+  const now = Date.now();
+  const lastCalc = loan.lastInterestApplied || loan.takenAt;
+  const oneDay = 24 * 60 * 60 * 1000;
+  
+  // Check if 24 hours have passed since last calculation
+  if (now - lastCalc >= oneDay) {
     
-    if (state.activePhase >= 3) return notify("Loans locked in Phase 3", "lock");
-    if (me.loan_data && me.loan_data.active) return notify("Repay existing loan first", "alert-circle");
+    // Calculate how many days passed since last check (usually 1, but handles absence)
+    const daysPassed = Math.floor((now - lastCalc) / oneDay);
     
-    // Get User Inputs
-    const amountVal = document.getElementById('loan-amount-input').value;
-    const daysVal = document.getElementById('loan-days-slider').value;
+    let newDue = loan.amountDue;
+    let currentDayCount = loan.dayCount || 0;
     
-    const amount = parseInt(amountVal);
-    const durationDays = parseInt(daysVal);
+    // Apply Interest for each day passed
+    for (let i = 0; i < daysPassed; i++) {
+      currentDayCount++;
+      let rate = 0.10; // Default 10%
+      
+      if (currentDayCount > 6) rate = 0.25; // Day 7+: 25% (Shark Mode)
+      else if (currentDayCount > 3) rate = 0.15; // Day 4-6: 15%
+      
+      // Compound Interest Formula
+      const interest = Math.ceil(newDue * rate);
+      newDue += interest;
+    }
     
-    // Validate
-    const limit = getLoanLimit(me.bounty);
-    
-    if (isNaN(amount) || amount <= 0) return notify("Invalid Amount", "alert-circle");
-    if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
-    if (isNaN(durationDays) || d
+    // Update DB
+    try {
+      await db.collection("players").doc(player.id).update({
+        "loan_data.amountDue": newDue,
+        "loan_data.lastInterestApplied": now, // Reset timer
+        "loan_data.dayCount": currentDayCount
+      });
+      console.log(`Interest applied to ${player.name}: New Due ${newDue}`);
+    } catch (e) {
+      console.error("Interest Sync Error", e);
+    }
+  }
+}
