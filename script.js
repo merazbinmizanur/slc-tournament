@@ -364,15 +364,33 @@ function switchAuthTab(type) {
 
 // [UPDATED] registerPlayerOnline: Initializes Goals to 0
 async function registerPlayerOnline() {
-    if (state.matches && state.matches.some(m => m.phase === 1)) {
-        return notify("Registration Closed: Tournament in Progress", "lock");
-    }
+    // 1. GET INPUTS FIRST
     const name = document.getElementById('reg-name').value.trim();
     const phone = document.getElementById('reg-phone').value.trim();
     const avatar = document.getElementById('reg-avatar').value.trim();
 
+    // 2. BASIC VALIDATION
     if (!name || !phone) return notify("Name & Phone required", "alert-circle");
 
+    // --- [CRITICAL FIX START] ---
+    // Check Database directly: Are there any Phase 1 matches?
+    try {
+        const checkSnapshot = await db.collection("matches")
+            .where("phase", "==", 1)
+            .limit(1) // We only need to find 1 to know it's started
+            .get();
+
+        if (!checkSnapshot.empty) {
+            // If we found a Phase 1 match, STOP EVERYTHING.
+            return notify("Registration Closed: Tournament Live!", "lock");
+        }
+    } catch (err) {
+        console.error("Security Check Failed", err);
+        return notify("Network Error: Cannot Verify Status", "wifi-off");
+    }
+    // --- [CRITICAL FIX END] ---
+
+    // 3. PROCEED IF TOURNAMENT IS NOT LIVE
     const r = () => Math.floor(Math.random() * 90 + 10);
     const uniqueID = `S${r()}L${r()}C${r()}`;
     
@@ -382,13 +400,14 @@ async function registerPlayerOnline() {
         phone: phone, 
         avatar: avatar,
         bounty: STARTING_BOUNTY, 
-        goals: 0, // <--- NEW: Init Goals
+        goals: 0, 
         mp: 0, wins: 0, draws: 0, losses: 0, 
         p2High: 0, p2Std: 0 
     };
     newP.bp_logs = [{
         id: 'init', ts: Date.now(), amount: 500, cat: 'System', desc: 'Welcome Bonus'
     }];
+    
     try {
         await db.collection("players").doc(uniqueID).set(newP);
         localStorage.setItem('slc_user_id', uniqueID);
