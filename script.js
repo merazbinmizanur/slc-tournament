@@ -39,7 +39,7 @@ const PASS_REWARDS = {
     premium: [
         { type: 'item', id: 'insurance' }, { type: 'bp' }, { type: 'item', id: 'scout' }, 
         { type: 'bp' }, { type: 'badge', id: 'Elite Raider' }, { type: 'item', id: 'privacy' },
-        { type: 'bp' }, { type: 'item', id: 'multiplier' }, { type: 'bp' }, { type: 'vault' }
+        { type: 'bp' }, { type: 'item', id: 'multiplier' }, { type: 'bp' }, { type: 'bundle' }
     ]
 };
 
@@ -1067,32 +1067,97 @@ function renderPlayerDashboard() {
             : `<div class="w-full h-full bg-slate-800 flex items-center justify-center text-2xl font-black text-white shadow-inner">${(p.name || "U").charAt(0).toUpperCase()}</div>`;
 
         // 1. PROFILE CARD
-        html += `
-            <div class="moving-border-gold p-[1.5px] rounded-[2.6rem] shadow-2xl relative">
-                <div class="bg-slate-900 rounded-[2.5rem] p-6 text-center relative overflow-hidden">
-                    <div class="absolute top-0 right-0 p-4">
-                        <span class="achievement-badge">Verified Pro</span>
-                    </div>
-                    
-                    <div class="w-20 h-20 rounded-3xl mx-auto mb-4 border border-white/10 shadow-lg overflow-hidden relative">
-                        ${avatarHTML}
-                    </div>
+// --- 0. FIFA OVR CALCULATION ENGINE (UPDATED) ---
 
-                    <h2 class="text-white font-black text-lg uppercase italic leading-none">${p.name || "Unknown Agent"}</h2>
-                    
-                    <div class="flex items-center justify-center gap-2 mt-2 cursor-pointer active:scale-95 transition-transform group" onclick="copyToClipboard('${p.id}')">
-                        <p class="text-[8px] text-slate-500 font-black uppercase tracking-widest group-hover:text-emerald-400 transition-colors">SLC-ID: ${p.id}</p>
-                        <i data-lucide="copy" class="w-3 h-3 text-slate-600 group-hover:text-emerald-400 transition-colors"></i>
+// 1. Start with a Base Rating (Standard FIFA Bronze/Silver start)
+const baseRating = 60;
+
+// 2. Performance Impact (Your requested logic)
+// Win = +3 | Draw = +1 | Loss = -2
+const performanceRating =
+    ((p.wins || 0) * 3) +
+    ((p.draws || 0) * 1) -
+    ((p.losses || 0) * 2);
+
+// 3. Economy Impact (1 OVR per 20 BP earned)
+// This ensures 700 BP is better than 500 BP even with same wins
+const economyRating = Math.floor((p.bounty - 500) / 20);
+
+// 4. Calculate Final OVR
+let calculatedOVR = baseRating + performanceRating + economyRating;
+
+// 5. Safety Caps (FIFA cards define 99 as max, 40 as lowest)
+if (calculatedOVR > 99) calculatedOVR = 99;
+if (calculatedOVR < 40) calculatedOVR = 40;
+
+// 6. Assign to variable for HTML
+const globalRank = calculatedOVR;
+
+// Define Card Glow Style based on OVR (FIFA Colors)
+let tierStyle = "glow-slate"; // Silver/Bronze (40-74)
+if (calculatedOVR >= 75) tierStyle = "glow-gold"; // Gold (75-84)
+if (calculatedOVR >= 85) tierStyle = "glow-emerald"; // Elite/TOTS (85-89)
+if (calculatedOVR >= 90) tierStyle = "glow-blue"; // TOTY/Icon (90+)
+
+// --- 1. PREMIUM FIFA-STYLE PROFILE CARD HTML ---
+html += `
+            <div class="fifa-card-container ${tierStyle} relative mb-6">
+                <div class="fifa-card-bg"></div>
+                
+                <!-- TOP LEFT: OVR Rating -->
+                <div class="card-rank-badge">
+                    <span class="text-3xl font-black text-white leading-none drop-shadow-md">${globalRank}</span>
+                    <span class="text-[7px] font-bold text-slate-400 uppercase tracking-widest mt-1">OVR</span>
+                </div>
+
+                <!-- TOP RIGHT: Tier Badge -->
+                <div class="card-tier-badge text-right">
+                    <div class="flex items-center gap-1 justify-end">
+                        <span class="text-[9px] font-black ${rank.color} uppercase tracking-widest">${rank.name}</span>
+                        ${p.bounty >= 1001 ? '<i data-lucide="crown" class="w-3 h-3 text-gold-500"></i>' : ''}
                     </div>
+                    <span class="text-[7px] text-slate-500 font-bold uppercase tracking-wider">Division</span>
+                </div>
+
+                <!-- CENTER: Avatar -->
+                <div class="avatar-hex-wrapper mb-3 mt-4">
+                    <div class="w-24 h-24 rounded-[1.5rem] bg-slate-900 border-2 ${rank.color.replace('text-', 'border-')} shadow-2xl overflow-hidden relative mx-auto">
+                        ${p.avatar 
+                            ? `<img src="${p.avatar}" class="w-full h-full object-cover">` 
+                            : `<div class="w-full h-full flex items-center justify-center text-3xl font-black text-white bg-slate-800">${(p.name || "U").charAt(0).toUpperCase()}</div>`
+                        }
+                    </div>
+                </div>
+
+                <!-- CENTER: Name & ID -->
+                <div class="text-center relative z-10 mb-5">
+                    <h1 class="text-2xl profile-name-glitch mb-1 tracking-tighter">${p.name}</h1>
                     
-                    <div class="flex justify-center gap-2 mt-4">
-                        ${p.bounty >= 1001 ? '<span class="achievement-badge border-gold-500/50 text-gold-500"><i data-lucide="crown" class="w-2 h-2"></i> Legend</span>' : ''}
-                        ${p.wins >= 5 ? '<span class="achievement-badge border-rose-500/50 text-rose-500"><i data-lucide="zap" class="w-2 h-2"></i> Predator</span>' : ''}
-                        <span class="achievement-badge ${rank.color} border-white/10">${rank.name}</span>
+                    <button onclick="copyToClipboard('${p.id}')" class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 active:scale-95 transition-transform group hover:bg-white/10">
+                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] group-hover:text-white transition-colors">ID: ${p.id}</span>
+                        <i data-lucide="copy" class="w-3 h-3 text-slate-500 group-hover:text-emerald-400 transition-colors"></i>
+                    </button>
+                </div>
+
+                <!-- BOTTOM: FIFA Stats Attributes -->
+                <div class="grid grid-cols-3 gap-2 border-t border-white/5 pt-3 relative z-10 px-2">
+                    <div class="text-center">
+                        <span class="block text-lg font-black text-emerald-400 leading-none">${p.wins || 0}</span>
+                        <span class="block text-[6px] text-slate-500 uppercase font-black tracking-widest mt-1">WIN</span>
+                    </div>
+                    <div class="text-center border-x border-white/5">
+                        <span class="block text-lg font-black text-gold-500 leading-none">${p.goals || 0}</span>
+                        <span class="block text-[6px] text-slate-500 uppercase font-black tracking-widest mt-1">GOALS</span>
+                    </div>
+                    <div class="text-center">
+                        <span class="block text-lg font-black ${p.currentStreak >= 3 ? 'text-orange-500' : 'text-slate-300'} leading-none">
+                            ${p.currentStreak || 0}
+                        </span>
+                        <span class="block text-[6px] text-slate-500 uppercase font-black tracking-widest mt-1">STRK</span>
                     </div>
                 </div>
             </div>
-
+            
             <div class="grid grid-cols-2 gap-4">
                 <div class="moving-border-blue p-[1px] rounded-[2.1rem] shadow-lg">
                     <div class="bg-slate-900 p-5 rounded-[2rem] text-center h-full flex flex-col justify-center">
@@ -1874,8 +1939,22 @@ if (sH > sA) {
                     passUpdates[`badges.${reward.id}`] = true;
                     rewardDesc += ` & Title: ${reward.id}`;
                 }
-                else if (reward.type === 'vault') {
-                    passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
+                else if (reward.type === 'bundle') {
+    // 1. Add Multiplier
+    passUpdates[`inventory.multiplier`] = firebase.firestore.FieldValue.increment(1);
+    // 2. Add Insurance
+    passUpdates[`inventory.insurance`] = firebase.firestore.FieldValue.increment(1);
+    // 3. Add Vault Key
+    passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
+    
+    rewardDesc += ` & Apex Bundle (Vault, Ins, Mult)`;
+}
+else if (reward.type === 'vault') {
+    passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
+    rewardDesc += ` & Vault Key`;
+} 
+{
+    passUpdates[`inventory.vault_access`] = firebase.firestore.FieldValue.increment(1);
                     rewardDesc += ` & Vault Key`;
                 }
                 
@@ -3112,22 +3191,41 @@ function switchTab(id) {
     
     // 2. UI TOGGLE: Hide all, Show target
     const tabs = ['home', 'schedule', 'arena', 'elite', 'settings', 'rules', 'all-matches'];
+    const indicator = document.getElementById('nav-indicator'); // Premium Indicator
     
     tabs.forEach(v => {
         const view = document.getElementById(`view-${v}`);
         const nav = document.getElementById(`nav-${v}`);
         if (view) view.classList.add('hidden');
-        if (nav) nav.classList.replace('text-emerald-500', 'text-slate-500');
+        
+        // Premium Update: Handle 'active' class instead of just color replacement
+        if (nav) {
+            nav.classList.remove('active', 'text-emerald-500');
+            nav.classList.add('text-slate-500');
+        }
     });
     
     const activeView = document.getElementById(`view-${id}`);
     const activeNav = document.getElementById(`nav-${id}`);
     
     if (activeView) activeView.classList.remove('hidden');
-    if (activeNav) activeNav.classList.replace('text-slate-500', 'text-emerald-500');
+    
+    if (activeNav) {
+        // Premium Update: Add active class and move indicator
+        activeNav.classList.remove('text-slate-500');
+        activeNav.classList.add('active', 'text-emerald-500');
+
+        // Move the soft glow indicator
+        if (indicator) {
+            const rect = activeNav.getBoundingClientRect();
+            const parentRect = activeNav.parentElement.getBoundingClientRect();
+            const centerX = rect.left - parentRect.left + (rect.width / 2) - (indicator.offsetWidth / 2);
+            indicator.style.transform = `translateX(${centerX}px)`;
+            indicator.style.opacity = '1';
+        }
+    }
     
     // 3. FORCE RENDER (DIRECT CALL FOR SPEED)
-    // We do NOT use debounce here because the user wants to see the page NOW.
     if (id === 'arena') renderBrokerBoard();
     if (id === 'settings') renderPlayerDashboard();
     if (id === 'elite') renderEliteBracket();
@@ -3139,7 +3237,6 @@ function switchTab(id) {
     }
     
     // 4. GLOBAL REFRESH (Background updates)
-    // Runs calculation for headers/pools but doesn't block the view switching
     refreshUI();
     
     // Scroll to top
@@ -3148,6 +3245,7 @@ function switchTab(id) {
     // Refresh icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 
 
@@ -4655,9 +4753,10 @@ function updatePassUI(me) {
                     rewardName = "TITLE";
                     icon = "award";
                     colorClass = "text-blue-400";
-                } else if (item.type === 'vault') {
-                    rewardName = "KEY";
-                    icon = "lock";
+                } else if (item.type === 'bundle') {
+                    // --- NEW UPDATED CODE FOR BUNDLE ---
+                    rewardName = "BUNDLE";
+                    icon = "package";
                     colorClass = "text-purple-400";
                 }
                 
@@ -5411,11 +5510,11 @@ function showPassPreview(type) {
             rewardName = `Title: ${item.id}`;
             rewardIcon = "award";
             colorClass = "text-blue-400";
-        } else if (item.type === 'vault') {
-            rewardName = "The Vault Key";
-            rewardIcon = "lock";
-            colorClass = "text-purple-400";
-        }
+        } else if (item.type === 'bundle') {
+    rewardName = "Apex Bundle (Vault + 2 Items)";
+    rewardIcon = "package";
+    colorClass = "text-purple-400";
+}
         
         listContainer.innerHTML += `
             <div class="flex items-center gap-3 p-3 bg-white/5 border border-white/5 rounded-2xl">
@@ -5685,7 +5784,8 @@ function updateLoanCalculator() {
     
     daysDisplay.innerText = days;
     
-    // Calculate Projected Interest (Simulate the Daily Compound Loop)
+    // Calculate Projected Interest (Simulat
+e the Daily Compound Loop)
     let projectedTotal = principal;
     
     for (let d = 1; d <= days; d++) {
@@ -5780,106 +5880,106 @@ async function repayLoan() {
 // 1. TAKE LOAN LOGIC
 // --- UPDATED TAKE LOAN ACTION ---
 async function takeLoan() {
-  const myID = localStorage.getItem('slc_user_id');
-  const me = state.players.find(p => p.id === myID);
-  
-  if (state.activePhase >= 3) return notify("Loans locked in Phase 3", "lock");
-  if (me.loan_data && me.loan_data.active) return notify("Repay existing loan first", "alert-circle");
-  
-  // Get User Inputs
-  const amountVal = document.getElementById('loan-amount-input').value;
-  const daysVal = document.getElementById('loan-days-slider').value;
-  
-  const amount = parseInt(amountVal);
-  const durationDays = parseInt(daysVal);
-  
-  // Validate
-  const limit = getLoanLimit(me.bounty);
-  
-  if (isNaN(amount) || amount <= 0) return notify("Invalid Amount", "alert-circle");
-  if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
-  if (isNaN(durationDays) || durationDays < 1) return notify("Invalid Duration", "clock");
-  
-  const now = Date.now();
-  const deadline = now + (durationDays * 24 * 60 * 60 * 1000);
-  
-  askConfirm(`Borrow ${amount} BP for ${durationDays} Days?`, async () => {
-    try {
-      const batch = db.batch();
-      const ref = db.collection("players").doc(myID);
-      
-      // Give Money
-      batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(amount) });
-      
-      // Set Loan Data
-      batch.update(ref, {
-        loan_data: {
-          active: true,
-          principal: amount,
-          amountDue: amount, // Starts at principal, interest adds daily via checkLoanInterest
-          takenAt: now,
-          deadline: deadline,
-          lastInterestApplied: now,
-          dayCount: 0
+    const myID = localStorage.getItem('slc_user_id');
+    const me = state.players.find(p => p.id === myID);
+    
+    if (state.activePhase >= 3) return notify("Loans locked in Phase 3", "lock");
+    if (me.loan_data && me.loan_data.active) return notify("Repay existing loan first", "alert-circle");
+    
+    // Get User Inputs
+    const amountVal = document.getElementById('loan-amount-input').value;
+    const daysVal = document.getElementById('loan-days-slider').value;
+    
+    const amount = parseInt(amountVal);
+    const durationDays = parseInt(daysVal);
+    
+    // Validate
+    const limit = getLoanLimit(me.bounty);
+    
+    if (isNaN(amount) || amount <= 0) return notify("Invalid Amount", "alert-circle");
+    if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
+    if (isNaN(durationDays) || durationDays < 1) return notify("Invalid Duration", "clock");
+    
+    const now = Date.now();
+    const deadline = now + (durationDays * 24 * 60 * 60 * 1000);
+    
+    askConfirm(`Borrow ${amount} BP for ${durationDays} Days?`, async () => {
+        try {
+            const batch = db.batch();
+            const ref = db.collection("players").doc(myID);
+            
+            // Give Money
+            batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(amount) });
+            
+            // Set Loan Data
+            batch.update(ref, {
+                loan_data: {
+                    active: true,
+                    principal: amount,
+                    amountDue: amount, // Starts at principal, interest adds daily via checkLoanInterest
+                    takenAt: now,
+                    deadline: deadline,
+                    lastInterestApplied: now,
+                    dayCount: 0
+                }
+            });
+            
+            // Log it
+            logTransaction(myID, amount, 'Bank', `Loan Taken (${durationDays}d)`, batch);
+            
+            await batch.commit();
+            notify(`Loan Received: +${amount} BP`, "landmark");
+            closeModal('modal-bank');
+            refreshUI();
+            
+        } catch (e) {
+            console.error(e);
+            notify("Banking Error", "x-circle");
         }
-      });
-      
-      // Log it
-      logTransaction(myID, amount, 'Bank', `Loan Taken (${durationDays}d)`, batch);
-      
-      await batch.commit();
-      notify(`Loan Received: +${amount} BP`, "landmark");
-      closeModal('modal-bank');
-      refreshUI();
-      
-    } catch (e) {
-      console.error(e);
-      notify("Banking Error", "x-circle");
-    }
-  });
+    });
 }
 
 // 3. AUTOMATIC INTEREST CALCULATOR (Run on Refresh)
 async function checkLoanInterest(player) {
-  if (!player.loan_data || !player.loan_data.active) return;
-  
-  const loan = player.loan_data;
-  const now = Date.now();
-  const lastCalc = loan.lastInterestApplied || loan.takenAt;
-  const oneDay = 24 * 60 * 60 * 1000;
-  
-  // Check if 24 hours have passed since last calculation
-  if (now - lastCalc >= oneDay) {
+    if (!player.loan_data || !player.loan_data.active) return;
     
-    // Calculate how many days passed since last check (usually 1, but handles absence)
-    const daysPassed = Math.floor((now - lastCalc) / oneDay);
+    const loan = player.loan_data;
+    const now = Date.now();
+    const lastCalc = loan.lastInterestApplied || loan.takenAt;
+    const oneDay = 24 * 60 * 60 * 1000;
     
-    let newDue = loan.amountDue;
-    let currentDayCount = loan.dayCount || 0;
-    
-    // Apply Interest for each day passed
-    for (let i = 0; i < daysPassed; i++) {
-      currentDayCount++;
-      let rate = 0.10; // Default 10%
-      
-      if (currentDayCount > 6) rate = 0.25; // Day 7+: 25% (Shark Mode)
-      else if (currentDayCount > 3) rate = 0.15; // Day 4-6: 15%
-      
-      // Compound Interest Formula
-      const interest = Math.ceil(newDue * rate);
-      newDue += interest;
+    // Check if 24 hours have passed since last calculation
+    if (now - lastCalc >= oneDay) {
+        
+        // Calculate how many days passed since last check (usually 1, but handles absence)
+        const daysPassed = Math.floor((now - lastCalc) / oneDay);
+        
+        let newDue = loan.amountDue;
+        let currentDayCount = loan.dayCount || 0;
+        
+        // Apply Interest for each day passed
+        for (let i = 0; i < daysPassed; i++) {
+            currentDayCount++;
+            let rate = 0.10; // Default 10%
+            
+            if (currentDayCount > 6) rate = 0.25; // Day 7+: 25% (Shark Mode)
+            else if (currentDayCount > 3) rate = 0.15; // Day 4-6: 15%
+            
+            // Compound Interest Formula
+            const interest = Math.ceil(newDue * rate);
+            newDue += interest;
+        }
+        
+        // Update DB
+        try {
+            await db.collection("players").doc(player.id).update({
+                "loan_data.amountDue": newDue,
+                "loan_data.lastInterestApplied": now, // Reset timer
+                "loan_data.dayCount": currentDayCount
+            });
+            console.log(`Interest applied to ${player.name}: New Due ${newDue}`);
+        } catch (e) {
+            console.error("Interest Sync Error", e);
+        }
     }
-    
-    // Update DB
-    try {
-      await db.collection("players").doc(player.id).update({
-        "loan_data.amountDue": newDue,
-        "loan_data.lastInterestApplied": now, // Reset timer
-        "loan_data.dayCount": currentDayCount
-      });
-      console.log(`Interest applied to ${player.name}: New Due ${newDue}`);
-    } catch (e) {
-      console.error("Interest Sync Error", e);
-    }
-  }
 }
