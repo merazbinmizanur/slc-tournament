@@ -5938,7 +5938,6 @@ async function takeLoan() {
         }
     });
 }
-
 // 3. AUTOMATIC INTEREST CALCULATOR (Run on Refresh)
 async function checkLoanInterest(player) {
     if (!player.loan_data || !player.loan_data.active) return;
