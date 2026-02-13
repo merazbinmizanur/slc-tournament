@@ -2557,7 +2557,6 @@ function updatePotentialReturn() {
     document.getElementById('bet-return-display').innerText = `${potential} BP`;
 }
 
-
 // --- 2. PROFIT-OPTIMIZED BETTING EXECUTION (THE BURN) ---
 async function placeBet() {
     const stakeInput = document.getElementById('bet-stake-input');
