@@ -364,12 +364,15 @@ function switchAuthTab(type) {
 
 // [UPDATED] registerPlayerOnline: Initializes Goals to 0
 async function registerPlayerOnline() {
+    if (state.matches && state.matches.some(m => m.phase === 1)) {
+        return notify("Registration Closed: Tournament in Progress", "lock");
+    }
     const name = document.getElementById('reg-name').value.trim();
     const phone = document.getElementById('reg-phone').value.trim();
     const avatar = document.getElementById('reg-avatar').value.trim();
 
     if (!name || !phone) return notify("Name & Phone required", "alert-circle");
-    
+
     const r = () => Math.floor(Math.random() * 90 + 10);
     const uniqueID = `S${r()}L${r()}C${r()}`;
     
@@ -383,7 +386,7 @@ async function registerPlayerOnline() {
         mp: 0, wins: 0, draws: 0, losses: 0, 
         p2High: 0, p2Std: 0 
     };
-newP.bp_logs = [{
+    newP.bp_logs = [{
         id: 'init', ts: Date.now(), amount: 500, cat: 'System', desc: 'Welcome Bonus'
     }];
     try {
@@ -395,9 +398,6 @@ newP.bp_logs = [{
         notify("Database error", "x-circle");
     }
 }
-
-
-
 
 async function loginWithID() {
     const id = document.getElementById('login-id').value.trim().toUpperCase();
