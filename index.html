@@ -1102,32 +1102,40 @@
     <div id="footer-container" class="w-full max-w-md mx-auto relative z-50">
         <div class="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-[420px] z-[60]">
             <div class="moving-border glass-navbar rounded-[2.5rem] p-[1.2px] shadow-2xl">
-                <nav class="flex items-center justify-around py-3 bg-slate-950/90 rounded-[2.4rem]">
-                    <button onclick="switchTab('home')" id="nav-home" class="flex flex-col items-center gap-1 p-2 text-emerald-500 scale-110">
-                        <i data-lucide="layout-grid" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">Home</span>
-                    </button>
-                    <button onclick="switchTab('schedule')" id="nav-schedule" class="flex flex-col items-center gap-1 p-2 text-slate-500">
-                        <i data-lucide="calendar" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">PH-1</span>
-                    </button>
-                    <button onclick="switchTab('arena')" id="nav-arena" class="flex flex-col items-center gap-1 p-2 text-slate-500">
-                        <i data-lucide="target" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">PH-2</span>
-                    </button>
-                    <button onclick="switchTab('elite')" id="nav-elite" class="flex flex-col items-center gap-1 p-2 text-slate-500">
-                        <i data-lucide="trophy" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">PH-3</span>
-                    </button>
-                    <button onclick="switchTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 p-2 text-slate-500">
-                        <i data-lucide="user" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">Pro</span>
-                    </button>
-                    <button onclick="switchTab('rules')" id="nav-rules" class="flex flex-col items-center gap-1 p-2 text-slate-500">
-                        <i data-lucide="book-open" class="w-5 h-5"></i>
-                        <span class="text-[7px] font-black uppercase">Rules</span>
-                    </button>
-                </nav>
+<nav class="flex items-center justify-around py-3 px-2 bg-slate-950/80 rounded-[2.5rem] border border-white/10 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] relative overflow-hidden">
+    <div id="nav-indicator" class="absolute h-10 w-12 bg-emerald-500/10 blur-xl rounded-full transition-all duration-500 ease-out pointer-events-none"></div>
+
+    <button onclick="switchTab('home')" id="nav-home" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="layout-grid" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Home</span>
+    </button>
+    
+    <button onclick="switchTab('schedule')" id="nav-schedule" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="calendar" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Phase 1</span>
+    </button>
+    
+    <button onclick="switchTab('arena')" id="nav-arena" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="target" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Phase 2</span>
+    </button>
+    
+    <button onclick="switchTab('elite')" id="nav-elite" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="trophy" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Phase 3</span>
+    </button>
+    
+    <button onclick="switchTab('settings')" id="nav-settings" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="user" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Profile</span>
+    </button>
+    
+    <button onclick="switchTab('rules')" id="nav-rules" class="nav-btn flex flex-col items-center gap-1.5 z-10">
+        <i data-lucide="book-open" class="w-5 h-5"></i>
+        <span class="text-[7.5px] font-black uppercase tracking-widest">Rules</span>
+    </button>
+</nav>
+
             </div>
         </div>
         
@@ -1667,5 +1675,4 @@
 
 <script src="script.js"></script>
 </body>
-
 </html>
