@@ -5642,23 +5642,33 @@ function openBankModal() {
     const loan = me.loan_data || { active: false };
     const isPhase3Locked = state.activePhase >= 3;
     
-    if (loan.active) {
-        // --- EXISTING ACTIVE LOAN UI (Keep Repayment Logic Same) ---
-        const now = Date.now();
-        const deadline = new Date(loan.deadline);
-        const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
-        const isOverdue = daysLeft < 0;
-        const totalDue = Math.floor(loan.amountDue);
-        
-        let displayPrincipal = loan.principal;
-        let displayInterest = Math.floor(loan.amountDue - loan.principal);
-        
-        if (totalDue < loan.principal) {
-            displayPrincipal = totalDue;
-            displayInterest = 0;
-        }
-        
-        statusArea.innerHTML = `
+     if (loan.active) {
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000; // Defined this constant
+    const deadline = new Date(loan.deadline);
+    const daysLeft = Math.ceil((deadline - now) / oneDay);
+    const isOverdue = daysLeft < 0;
+    
+    const isEarly = (now - loan.takenAt) < oneDay;
+    
+    // Apply 10 BP fee ONLY if early AND they haven't accrued standard interest yet
+    let processFee = (isEarly && loan.amountDue <= loan.principal) ? 10 : 0;
+    
+    // Calculate Final Total (Principal + Interest + Fee)
+    const totalDue = Math.floor(loan.amountDue + processFee);
+    
+    // Display Logic
+    let displayPrincipal = loan.principal;
+    // We add the fee to the "Interest" display so the math matches visually
+    let displayInterest = Math.floor((loan.amountDue - loan.principal) + processFee);
+    
+    // Handle partial payment display edge case
+    if (totalDue < loan.principal) {
+        displayPrincipal = totalDue;
+        displayInterest = 0;
+    }
+    
+    statusArea.innerHTML = `
             <div class="bg-slate-950 p-4 rounded-2xl border border-rose-500/30 relative overflow-hidden mb-4">
                 <div class="absolute top-0 left-0 w-full h-1 bg-rose-500 animate-pulse"></div>
                 <p class="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Debt Owed</p>
@@ -5670,8 +5680,8 @@ function openBankModal() {
                         <span class="text-[9px] font-bold text-white">${displayPrincipal} BP</span>
                     </div>
                     <div class="bank-stat-box">
-                        <span class="block text-[7px] text-slate-500 uppercase">Interest</span>
-                        <span class="text-[9px] font-bold text-rose-400">+${displayInterest} BP</span>
+                        <span class="block text-[7px] text-slate-500 uppercase">Interest / Fees</span>
+<span class="text-[9px] font-bold text-rose-400">+${displayInterest + processFee} BP</span>
                     </div>
                 </div>
 
@@ -5683,10 +5693,10 @@ function openBankModal() {
                 </div>
             </div>
         `;
-        
-        const maxAffordable = Math.min(me.bounty, totalDue);
-        
-        actionArea.innerHTML = `
+    
+    const maxAffordable = Math.min(me.bounty, totalDue);
+    
+    actionArea.innerHTML = `
             <div class="flex justify-between items-center px-2 mb-2">
                 <span class="text-[8px] text-slate-500 font-bold uppercase">Your Wallet</span>
                 <span class="text-[9px] font-black ${me.bounty > 0 ? 'text-emerald-400' : 'text-rose-500'}">${me.bounty.toLocaleString()} BP</span>
@@ -5708,8 +5718,7 @@ function openBankModal() {
                 MAKE PAYMENT
             </button>
         `;
-        
-    } else {
+} else {
         // --- NEW LOAN REQUEST UI (UPDATED) ---
         if (isPhase3Locked) {
             statusArea.innerHTML = `
@@ -5833,6 +5842,12 @@ async function repayLoan() {
     
     // 1. Validations
     if (!loan || !loan.active) return;
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    // Check if current time is less than 24 hours from loan creation
+    const isEarly = (now - loan.takenAt) < oneDay;
+    // Apply 10 BP fee ONLY if early AND they haven't accrued standard interest yet
+    let processFee = (isEarly && loan.amountDue <= loan.principal) ? 10 : 0;
     
     const inputEl = document.getElementById('bank-repay-input');
     const payAmount = parseInt(inputEl.value);
@@ -5840,9 +5855,8 @@ async function repayLoan() {
     if (isNaN(payAmount) || payAmount <= 0) return notify("Enter a valid amount", "alert-circle");
     if (payAmount > me.bounty) return notify("Insufficient Funds", "alert-triangle");
     
-    // Determine if this is a Full Payoff or Partial
-    // We use a small epsilon for float comparison safety, or just integer logic
-    const totalDue = Math.floor(loan.amountDue);
+    const totalDue = Math.floor(loan.amountDue + processFee);
+    
     const isFullPayment = payAmount >= totalDue;
     const finalPayment = isFullPayment ? totalDue : payAmount;
     
@@ -5869,10 +5883,8 @@ async function repayLoan() {
                 batch.update(ref, { loan_data: { active: false } });
                 logTransaction(myID, -finalPayment, 'Bank', 'Debt Cleared', batch);
             } else {
-                // Scenario 2: Partial Payment
-                // We reduce the amountDue. 
-                // Note: We DO NOT reset dayCount or lastInterestApplied. The interest clock keeps ticking.
-                const newBalance = loan.amountDue - finalPayment;
+                const newBalance = (loan.amountDue + processFee) - finalPayment;
+                
                 batch.update(ref, {
                     "loan_data.amountDue": newBalance
                 });
@@ -5891,7 +5903,6 @@ async function repayLoan() {
         }
     });
 }
-
 // 1. TAKE LOAN LOGIC
 // --- UPDATED TAKE LOAN ACTION ---
 async function takeLoan() {
