@@ -364,33 +364,15 @@ function switchAuthTab(type) {
 
 // [UPDATED] registerPlayerOnline: Initializes Goals to 0
 async function registerPlayerOnline() {
-    // 1. GET INPUTS FIRST
+    if (state.matches && state.matches.some(m => m.phase === 1)) {
+        return notify("Registration Closed: Tournament in Progress", "lock");
+    }
     const name = document.getElementById('reg-name').value.trim();
     const phone = document.getElementById('reg-phone').value.trim();
     const avatar = document.getElementById('reg-avatar').value.trim();
 
-    // 2. BASIC VALIDATION
     if (!name || !phone) return notify("Name & Phone required", "alert-circle");
 
-    // --- [CRITICAL FIX START] ---
-    // Check Database directly: Are there any Phase 1 matches?
-    try {
-        const checkSnapshot = await db.collection("matches")
-            .where("phase", "==", 1)
-            .limit(1) // We only need to find 1 to know it's started
-            .get();
-
-        if (!checkSnapshot.empty) {
-            // If we found a Phase 1 match, STOP EVERYTHING.
-            return notify("Registration Closed: Tournament Live!", "lock");
-        }
-    } catch (err) {
-        console.error("Security Check Failed", err);
-        return notify("Network Error: Cannot Verify Status", "wifi-off");
-    }
-    // --- [CRITICAL FIX END] ---
-
-    // 3. PROCEED IF TOURNAMENT IS NOT LIVE
     const r = () => Math.floor(Math.random() * 90 + 10);
     const uniqueID = `S${r()}L${r()}C${r()}`;
     
@@ -400,14 +382,13 @@ async function registerPlayerOnline() {
         phone: phone, 
         avatar: avatar,
         bounty: STARTING_BOUNTY, 
-        goals: 0, 
+        goals: 0, // <--- NEW: Init Goals
         mp: 0, wins: 0, draws: 0, losses: 0, 
         p2High: 0, p2Std: 0 
     };
     newP.bp_logs = [{
         id: 'init', ts: Date.now(), amount: 500, cat: 'System', desc: 'Welcome Bonus'
     }];
-    
     try {
         await db.collection("players").doc(uniqueID).set(newP);
         localStorage.setItem('slc_user_id', uniqueID);
@@ -2087,19 +2068,32 @@ else if (reward.type === 'vault') {
 function openResultEntry(id) {
     state.activeMatchId = id;
     const m = state.matches.find(x => x.id === id);
+    
+    // --- SECURITY CHECK: 15 HOUR LOCK ---
+    if (!state.isAdmin) { // Admins can bypass, players cannot
+        const now = Date.now();
+        const unlockTime = m.bettingEndsAt || 0;
+        
+        if (now < unlockTime) {
+            const timeLeft = unlockTime - now;
+            const hoursLeft = Math.ceil(timeLeft / (1000 * 60 * 60));
+            return notify(`Match Locked! Opens in ${hoursLeft} hours.`, "lock");
+        }
+    }
+    // ------------------------------------
+    
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
-
+    
     // 1. UI Labels (Names)
     document.getElementById('res-h-name').innerText = h?.name || "TBD";
     document.getElementById('res-a-name').innerText = a?.name || "TBD";
-
-    // 2. NEW: Inject Avatars (Large Size: w-16 h-16)
-    // This automatically handles the "Image vs Initials" logic
+    
+    // 2. Inject Avatars
     document.getElementById('res-h-avatar').innerHTML = getAvatarUI(h, "w-16", "h-16", "text-2xl");
     document.getElementById('res-a-avatar').innerHTML = getAvatarUI(a, "w-16", "h-16", "text-2xl");
-
-    // 3. Check if Editing (Match is already played)
+    
+    // 3. Check if Editing
     if (m.status === 'played' && m.score) {
         document.getElementById('res-s-h').value = m.score.h;
         document.getElementById('res-s-a').value = m.score.a;
@@ -2110,11 +2104,11 @@ function openResultEntry(id) {
         document.getElementById('res-s-a').value = "";
         document.getElementById('res-match-label').innerText = `PH-${m.phase} VERIFICATION`;
     }
-
+    
     // 4. Admin Layout
     const verifyIdContainer = document.getElementById('res-verify-id').parentElement;
     if (state.isAdmin) {
-        verifyIdContainer.classList.add('hidden'); // Hide ID check for admin
+        verifyIdContainer.classList.add('hidden');
         document.getElementById('res-date').value = m.scheduledDate || "";
         document.getElementById('res-deadline').value = m.deadline || "";
     } else {
@@ -2179,7 +2173,6 @@ async function checkAndRewardMilestones(playerId) {
         console.error("Milestone Error:", e);
     }
 }
-
 /* --- NEW PASS PROMO LOGIC --- */
 
 let passPromoShownSession = false; // Prevents spamming every refresh
@@ -2300,21 +2293,30 @@ function toggleMatchSelection(mid) {
 async function applyBulkSchedule() {
     const d = document.getElementById('bulk-date').value;
     const t = document.getElementById('bulk-time').value;
-
+    
     if (state.selectedMatches.size === 0) return notify("No matches selected", "alert-circle");
     if (!d) return notify("Select a Date", "calendar");
-
+    
+    // --- NEW LOGIC: 15 HOUR LOCK ---
+    const now = Date.now();
+    const LOCK_DURATION = 15 * 60 * 60 * 1000; // 15 Hours in Milliseconds
+    const unlockTime = now + LOCK_DURATION;
+    // -------------------------------
+    
     try {
         const batch = db.batch();
         state.selectedMatches.forEach(mid => {
-            const updateData = { scheduledDate: d };
+            const updateData = {
+                scheduledDate: d,
+                bettingEndsAt: unlockTime // Saving the 15-hour lock time
+            };
             if (t) updateData.deadline = `${d}T${t}`; // Only add time if selected
             batch.update(db.collection("matches").doc(mid), updateData);
         });
-
+        
         await batch.commit();
         
-        notify(`${state.selectedMatches.size} Matches Updated!`, "check-circle");
+        notify(`${state.selectedMatches.size} Matches Locked for 15 Hours!`, "lock");
         state.bulkMode = false;
         state.selectedMatches.clear();
         renderSchedule();
@@ -2422,6 +2424,16 @@ function openBettingModal(mid) {
     const m = state.matches.find(x => x.id === mid);
     if (!m) return;
     
+    // --- SECURITY CHECK: BETTING DEADLINE ---
+    const now = Date.now();
+    const unlockTime = m.bettingEndsAt || 0;
+    
+    // If unlockTime has passed, it means match is LIVE, so Betting is CLOSED
+    if (unlockTime > 0 && now >= unlockTime) {
+        return notify("Betting Closed! Match is now Live.", "clock");
+    }
+    // ----------------------------------------
+    
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
     const myID = localStorage.getItem('slc_user_id');
@@ -2429,13 +2441,10 @@ function openBettingModal(mid) {
     
     if (!me) return notify("Login required to bet", "lock");
     
-    // 1. Recalculate odds live
+    // Recalculate odds live
     const odds = calculateMatchOdds(h, a);
     
-    // 2. FIXED LOOPHOLE CALCULATION:
-    // Calculate how much is already tied up in pending bets
     let pendingStakes = 0;
-    // We filter the global bets state for the current user's pending bets
     db.collection("bets")
         .where("userId", "==", myID)
         .where("status", "==", "pending")
@@ -2444,12 +2453,11 @@ function openBettingModal(mid) {
             snapshot.forEach(doc => {
                 pendingStakes += (doc.data().stake || 0);
             });
-
-            // Total worth = Current BP + What is already bet
+            
             const totalWorth = me.bounty + pendingStakes;
             const absoluteMaxStake = Math.floor(totalWorth * BETTING_MAX_STAKE_PERCENT);
             const remainingAllowance = Math.max(0, absoluteMaxStake - pendingStakes);
-
+            
             // UI Setup
             document.getElementById('bet-h-name').innerText = h.name;
             document.getElementById('bet-a-name').innerText = a.name;
@@ -2458,20 +2466,18 @@ function openBettingModal(mid) {
             document.getElementById('odds-away').innerText = odds.a + 'x';
             document.getElementById('bet-wallet-display').innerText = `${me.bounty} BP`;
             
-            // Set the dynamic remaining limit
             document.getElementById('bet-max-val').innerText = remainingAllowance;
             const stakeInput = document.getElementById('bet-stake-input');
             stakeInput.max = remainingAllowance;
             stakeInput.value = '';
             
-            // Set State for the current transaction
-            activeBet = { 
-                mid: mid, 
-                selection: null, 
-                oddsObj: odds, 
-                allowedLimit: remainingAllowance // Store for validation
+            activeBet = {
+                mid: mid,
+                selection: null,
+                oddsObj: odds,
+                allowedLimit: remainingAllowance
             };
-
+            
             document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
             document.getElementById('btn-confirm-bet').disabled = true;
             updatePotentialReturn();
@@ -2480,20 +2486,24 @@ function openBettingModal(mid) {
         });
 }
 
+// --- CORRECTED BETTING LOGIC ---
+
 function updatePotentialReturn() {
     const stakeInput = document.getElementById('bet-stake-input');
     const stake = parseInt(stakeInput.value) || 0;
     const btn = document.getElementById('btn-confirm-bet');
     const msg = document.getElementById('bet-limit-msg');
     
-    // Use the limit calculated when the modal opened
+    // FIX: Use the calculated limit from openBettingModal
+    // This considers (Wallet + Pending Bets) to determine true Net Worth
     const maxAllowed = activeBet.allowedLimit || 0;
     
     let potential = 0;
     
     if (stake > maxAllowed) {
         msg.classList.remove('hidden');
-        msg.innerText = `Limit Reached: Max ${maxAllowed} BP remaining`;
+        // Show remaining limit specifically
+        msg.innerText = `Limit Reached: Max ${maxAllowed} BP allowed`;
         btn.disabled = true;
         btn.classList.add('opacity-50', 'cursor-not-allowed');
     } else {
@@ -2509,6 +2519,21 @@ function updatePotentialReturn() {
     }
     
     document.getElementById('bet-return-display').innerText = `${potential} BP`;
+}
+
+function selectBetOutcome(selection) {
+    activeBet.selection = selection;
+    
+    // Visual Update
+    document.querySelectorAll('.bet-option-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById(`btn-bet-${selection}`).classList.add('selected');
+    
+    // Determine Odds
+    if (selection === 'home') activeBet.odds = activeBet.oddsObj.h;
+    if (selection === 'draw') activeBet.odds = activeBet.oddsObj.d;
+    if (selection === 'away') activeBet.odds = activeBet.oddsObj.a;
+    
+    updatePotentialReturn();
 }
 
 
@@ -2556,6 +2581,7 @@ function updatePotentialReturn() {
     
     document.getElementById('bet-return-display').innerText = `${potential} BP`;
 }
+
 
 // --- 2. PROFIT-OPTIMIZED BETTING EXECUTION (THE BURN) ---
 async function placeBet() {
@@ -2807,14 +2833,53 @@ function renderSchedule() {
         const h = state.players.find(p => p.id === m.homeId);
         const a = state.players.find(p => p.id === m.awayId);
         const isSelected = state.selectedMatches.has(m.id);
-        
+        // --- INSERT THIS BLOCK ---
+const now = Date.now();
+const unlockTime = m.bettingEndsAt || 0; // Gets the lock time from DB
+
+// Logic: If current time is LESS than unlockTime, it is Betting Phase (Locked)
+const isBettingPhase = (unlockTime > 0 && now < unlockTime);
+
+// Logic: If current time is MORE than unlockTime, it is Action Phase (Unlocked)
+const isActionPhase = (unlockTime > 0 && now >= unlockTime);
+
+// Calculate hours left for display
+let hoursLeft = 0;
+if (isBettingPhase) {
+    const diff = unlockTime - now;
+    hoursLeft = Math.ceil(diff / (1000 * 60 * 60));
+}
+// -------------------------
         // --- NEW: SANCTION CHECK FOR MAIN LIST ---
         const sanction = getSanctionPercentage(m.deadline);
         const isLate = sanction > 0;
     
         let borderClass = state.bulkMode ? (isSelected ? 'moving-border-gold' : 'moving-border') : 'moving-border-emerald';
         if (isLate && !state.bulkMode) borderClass = 'moving-border-rose'; // Red Border if late
-    
+    // --- INSERT THIS BLOCK ---
+let actionButtonHTML = "";
+
+if (isBettingPhase) {
+    // CASE 1: MATCH IS LOCKED (SHOW LOCK ICON)
+    actionButtonHTML = `
+        <div class="mt-3 pt-2 border-t border-white/5 text-center">
+            <div class="w-full py-2 bg-slate-950 border border-white/5 rounded-xl flex items-center justify-center gap-2 opacity-60 cursor-not-allowed">
+                <i data-lucide="lock" class="w-3 h-3 text-gold-500 animate-pulse"></i>
+                <span class="text-[7px] text-gold-500 font-bold uppercase tracking-widest">
+                    LOCKED (Opens in ${hoursLeft}h)
+                </span>
+            </div>
+        </div>`;
+} else {
+    // CASE 2: MATCH IS LIVE (SHOW SUBMIT BUTTON)
+    actionButtonHTML = `
+        <div class="mt-3 pt-2 border-t border-white/5 text-center">
+            <button onclick="openResultEntry('${m.id}')" class="w-full py-2 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-[8px] font-black text-emerald-400 uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all">
+                TAP TO VERIFY RESULT
+            </button>
+        </div>`;
+}
+// -------------------------
         const card = document.createElement('div');
         card.className = `${borderClass} p-[1px] rounded-[1.6rem] mb-4 w-full max-w-[340px] mx-auto shadow-xl transition-transform ${state.bulkMode ? 'cursor-pointer' : 'active:scale-95'}`;
         
@@ -2846,7 +2911,7 @@ function renderSchedule() {
             }
         }
         
-        let innerHTML = `
+let innerHTML = `
             <div class="bg-slate-900 p-4 rounded-[1.5rem] h-full relative z-10">
                 <div class="flex justify-between items-center mb-3">
                     <div class="flex items-center">
@@ -2867,7 +2932,10 @@ function renderSchedule() {
                         ${getAvatarUI(a, "w-8", "h-8")}
                     </div>
                 </div>
+                
                 ${countdownHTML}
+
+                ${actionButtonHTML}
         `;
 
         // --- SCOUT BUTTON INTEGRATION (ADDED) ---
@@ -2907,41 +2975,60 @@ const isNotParticipant = isPlayer && m.homeId !== myID && m.awayId !== myID;
 const isValidMatch = m.deadline && !state.bulkMode;
 
 // LOGIC: Show UI if Player + Not Participant + Valid Match
+// --- BETTING LOGIC UPDATE (STEP 4) ---
 if (isPlayer && isNotParticipant && isValidMatch) {
     
-    // CONDITION 1: GLOBAL BETTING STOPPED
+    // Calculate odds for display
+    const odds = calculateMatchOdds(h, a);
+    
+    // CONDITION 1: GLOBAL BETTING STOPPED (Master Switch)
     if (!state.bettingActive) {
-        // Do not render anything (vanish), or optionally render a "Suspended" badge
-        // innerHTML += ``; // Renders nothing
+        // Do nothing - Betting system disabled globally
     }
-    // CONDITION 2: ALREADY BET ON THIS MATCH
-    else if (state.myBets.has(m.id)) {
-        innerHTML += `
-                <div class="mt-3 pt-3 border-t border-white/5 text-center">
-                    <div class="w-full py-2 bg-purple-900/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2">
-                        <i data-lucide="ticket" class="w-3 h-3 text-purple-400"></i>
-                        <span class="text-[8px] font-black text-purple-400 uppercase tracking-widest">Wager Active</span>
-                    </div>
-                </div>`;
+    
+    // CONDITION 2: CHECK PHASE (Is Betting Window Open?)
+    else if (isBettingPhase) {
+        // --- BETTING IS OPEN ---
+        
+        if (state.myBets.has(m.id)) {
+            // SUB-CONDITION: ALREADY BET
+            innerHTML += `
+                        <div class="mt-3 pt-3 border-t border-white/5 text-center">
+                            <div class="w-full py-2 bg-purple-900/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2">
+                                <i data-lucide="ticket" class="w-3 h-3 text-purple-400"></i>
+                                <span class="text-[8px] font-black text-purple-400 uppercase tracking-widest">Wager Active</span>
+                            </div>
+                        </div>`;
+        } else {
+            // SUB-CONDITION: ALLOW NEW BET
+            innerHTML += `
+                        <div class="mt-3 pt-3 border-t border-white/5 relative group">
+                            <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-2">
+                                <span class="text-[6px] text-purple-400 font-black uppercase tracking-widest border border-purple-500/30 px-1 rounded bg-purple-500/10">Betting</span>
+                            </div>
+                            
+                            <div class="flex justify-between items-center mb-2 px-2">
+                                <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Home</span><span class="text-[8px] font-black text-purple-400">${odds.h}x</span></div>
+                                <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Draw</span><span class="text-[8px] font-black text-purple-400">${odds.d}x</span></div>
+                                <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Away</span><span class="text-[8px] font-black text-purple-400">${odds.a}x</span></div>
+                            </div>
+
+                            <button onclick="event.stopPropagation(); openBettingModal('${m.id}')" class="w-full py-2 bg-gradient-to-r from-purple-900/40 to-purple-800/40 border border-purple-500/30 rounded-xl text-[8px] font-black text-white uppercase tracking-widest hover:bg-purple-600 transition-all shadow-[0_0_10px_rgba(168,85,247,0.1)] flex items-center justify-center gap-2">
+                                <i data-lucide="banknote" class="w-3 h-3 text-purple-400"></i> Place Bet
+                            </button>
+                        </div>`;
+        }
     }
-    // CONDITION 3: ALLOW BETTING
+    
+    // CONDITION 3: BETTING WINDOW CLOSED (Time Expired)
     else {
         innerHTML += `
-                <div class="mt-3 pt-3 border-t border-white/5 relative group">
-                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-2">
-                        <span class="text-[6px] text-purple-400 font-black uppercase tracking-widest border border-purple-500/30 px-1 rounded bg-purple-500/10">Betting</span>
-                    </div>
-                    
-                    <div class="flex justify-between items-center mb-2 px-2">
-                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Home</span><span class="text-[8px] font-black text-purple-400">${odds.h}x</span></div>
-                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Draw</span><span class="text-[8px] font-black text-purple-400">${odds.d}x</span></div>
-                        <div class="text-center"><span class="block text-[6px] text-slate-500 uppercase">Away</span><span class="text-[8px] font-black text-purple-400">${odds.a}x</span></div>
-                    </div>
-
-                    <button onclick="openBettingModal('${m.id}')" class="w-full py-2 bg-gradient-to-r from-purple-900/40 to-purple-800/40 border border-purple-500/30 rounded-xl text-[8px] font-black text-white uppercase tracking-widest hover:bg-purple-600 transition-all shadow-[0_0_10px_rgba(168,85,247,0.1)] flex items-center justify-center gap-2">
-                        <i data-lucide="banknote" class="w-3 h-3 text-purple-400"></i> Place Bet
-                    </button>
-                </div>`;
+                    <div class="mt-3 pt-3 border-t border-white/5 text-center opacity-40">
+                         <div class="w-full py-2 bg-slate-950 border border-white/5 rounded-xl flex items-center justify-center gap-2">
+                            <i data-lucide="lock" class="w-3 h-3 text-slate-600"></i>
+                            <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest">BETTING CLOSED</span>
+                        </div>
+                    </div>`;
     }
 }
 // ---------------------------------
@@ -3298,7 +3385,6 @@ async function setPhase3Lock() {
         notify("Error saving timer", "x-circle");
     }
 }
-
 // [NEW FUNCTION] clearPhase3Lock: Removes the countdown timer
 async function clearPhase3Lock() {
     askConfirm("Stop & Clear Phase 3 Timer?", async () => {
@@ -4402,6 +4488,8 @@ async function adminSyncGoals() {
         }
     });
 }
+
+
 
 // --- NEW: HOME VIEW SECTION MANAGEMENT ---
 
@@ -5642,33 +5730,23 @@ function openBankModal() {
     const loan = me.loan_data || { active: false };
     const isPhase3Locked = state.activePhase >= 3;
     
-     if (loan.active) {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000; // Defined this constant
-    const deadline = new Date(loan.deadline);
-    const daysLeft = Math.ceil((deadline - now) / oneDay);
-    const isOverdue = daysLeft < 0;
-    
-    const isEarly = (now - loan.takenAt) < oneDay;
-    
-    // Apply 10 BP fee ONLY if early AND they haven't accrued standard interest yet
-    let processFee = (isEarly && loan.amountDue <= loan.principal) ? 10 : 0;
-    
-    // Calculate Final Total (Principal + Interest + Fee)
-    const totalDue = Math.floor(loan.amountDue + processFee);
-    
-    // Display Logic
-    let displayPrincipal = loan.principal;
-    // We add the fee to the "Interest" display so the math matches visually
-    let displayInterest = Math.floor((loan.amountDue - loan.principal) + processFee);
-    
-    // Handle partial payment display edge case
-    if (totalDue < loan.principal) {
-        displayPrincipal = totalDue;
-        displayInterest = 0;
-    }
-    
-    statusArea.innerHTML = `
+    if (loan.active) {
+        // --- EXISTING ACTIVE LOAN UI (Keep Repayment Logic Same) ---
+        const now = Date.now();
+        const deadline = new Date(loan.deadline);
+        const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+        const isOverdue = daysLeft < 0;
+        const totalDue = Math.floor(loan.amountDue);
+        
+        let displayPrincipal = loan.principal;
+        let displayInterest = Math.floor(loan.amountDue - loan.principal);
+        
+        if (totalDue < loan.principal) {
+            displayPrincipal = totalDue;
+            displayInterest = 0;
+        }
+        
+        statusArea.innerHTML = `
             <div class="bg-slate-950 p-4 rounded-2xl border border-rose-500/30 relative overflow-hidden mb-4">
                 <div class="absolute top-0 left-0 w-full h-1 bg-rose-500 animate-pulse"></div>
                 <p class="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Debt Owed</p>
@@ -5680,8 +5758,8 @@ function openBankModal() {
                         <span class="text-[9px] font-bold text-white">${displayPrincipal} BP</span>
                     </div>
                     <div class="bank-stat-box">
-                        <span class="block text-[7px] text-slate-500 uppercase">Interest / Fees</span>
-<span class="text-[9px] font-bold text-rose-400">+${displayInterest + processFee} BP</span>
+                        <span class="block text-[7px] text-slate-500 uppercase">Interest</span>
+                        <span class="text-[9px] font-bold text-rose-400">+${displayInterest} BP</span>
                     </div>
                 </div>
 
@@ -5693,10 +5771,10 @@ function openBankModal() {
                 </div>
             </div>
         `;
-    
-    const maxAffordable = Math.min(me.bounty, totalDue);
-    
-    actionArea.innerHTML = `
+        
+        const maxAffordable = Math.min(me.bounty, totalDue);
+        
+        actionArea.innerHTML = `
             <div class="flex justify-between items-center px-2 mb-2">
                 <span class="text-[8px] text-slate-500 font-bold uppercase">Your Wallet</span>
                 <span class="text-[9px] font-black ${me.bounty > 0 ? 'text-emerald-400' : 'text-rose-500'}">${me.bounty.toLocaleString()} BP</span>
@@ -5718,13 +5796,15 @@ function openBankModal() {
                 MAKE PAYMENT
             </button>
         `;
-} else {
+        
+    } else {
         // --- NEW LOAN REQUEST UI (UPDATED) ---
         if (isPhase3Locked) {
             statusArea.innerHTML = `
                 <div class="py-8 text-center opacity-50">
                     <i data-lucide="lock" class="w-12 h-12 text-slate-600 mx-auto mb-3"></i>
-                    <p class="text-[9px] text-slate-500 font-black uppercase">Loans Disabled in Phase 3</p>
+                    <p
+ class="text-[9px] text-slate-500 font-black uppercase">Loans Disabled in Phase 3</p>
                 </div>`;
             actionArea.innerHTML = ``;
         } else {
@@ -5842,12 +5922,6 @@ async function repayLoan() {
     
     // 1. Validations
     if (!loan || !loan.active) return;
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    // Check if current time is less than 24 hours from loan creation
-    const isEarly = (now - loan.takenAt) < oneDay;
-    // Apply 10 BP fee ONLY if early AND they haven't accrued standard interest yet
-    let processFee = (isEarly && loan.amountDue <= loan.principal) ? 10 : 0;
     
     const inputEl = document.getElementById('bank-repay-input');
     const payAmount = parseInt(inputEl.value);
@@ -5855,8 +5929,9 @@ async function repayLoan() {
     if (isNaN(payAmount) || payAmount <= 0) return notify("Enter a valid amount", "alert-circle");
     if (payAmount > me.bounty) return notify("Insufficient Funds", "alert-triangle");
     
-    const totalDue = Math.floor(loan.amountDue + processFee);
-    
+    // Determine if this is a Full Payoff or Partial
+    // We use a small epsilon for float comparison safety, or just integer logic
+    const totalDue = Math.floor(loan.amountDue);
     const isFullPayment = payAmount >= totalDue;
     const finalPayment = isFullPayment ? totalDue : payAmount;
     
@@ -5883,8 +5958,10 @@ async function repayLoan() {
                 batch.update(ref, { loan_data: { active: false } });
                 logTransaction(myID, -finalPayment, 'Bank', 'Debt Cleared', batch);
             } else {
-                const newBalance = (loan.amountDue + processFee) - finalPayment;
-                
+                // Scenario 2: Partial Payment
+                // We reduce the amountDue. 
+                // Note: We DO NOT reset dayCount or lastInterestApplied. The interest clock keeps ticking.
+                const newBalance = loan.amountDue - finalPayment;
                 batch.update(ref, {
                     "loan_data.amountDue": newBalance
                 });
@@ -5903,6 +5980,7 @@ async function repayLoan() {
         }
     });
 }
+
 // 1. TAKE LOAN LOGIC
 // --- UPDATED TAKE LOAN ACTION ---
 async function takeLoan() {
@@ -5986,10 +6064,10 @@ async function checkLoanInterest(player) {
         // Apply Interest for each day passed
         for (let i = 0; i < daysPassed; i++) {
             currentDayCount++;
-            let rate = 0.05; // Default 10%
+            let rate = 0.10; // Default 10%
             
-            if (currentDayCount > 6) rate = 0.10; // Day 7+: 25% (Shark Mode)
-            else if (currentDayCount > 3) rate = 0.07; // Day 4-6: 15%
+            if (currentDayCount > 6) rate = 0.25; // Day 7+: 25% (Shark Mode)
+            else if (currentDayCount > 3) rate = 0.15; // Day 4-6: 15%
             
             // Compound Interest Formula
             const interest = Math.ceil(newDue * rate);
