@@ -5731,7 +5731,7 @@ function openBankModal() {
                     <p class="text-3xl font-black text-emerald-400">${maxLoan} BP</p>
                     <div class="mt-3 bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
                         <p class="text-[7px] text-rose-400 font-bold uppercase leading-tight">
-                            Daily Rates: 10% (Day 1-3) • 15% (Day 4-6) • 25% (Day 7+)
+                            Daily Rates: 5% (Day 1-3) • 7% (Day 4-6) • 10% (Day 7+)
                         </p>
                     </div>
                 </div>
@@ -5804,9 +5804,9 @@ function updateLoanCalculator() {
     let projectedTotal = principal;
     
     for (let d = 1; d <= days; d++) {
-        let rate = 0.10; // Default 10%
-        if (d > 6) rate = 0.25; // Day 7+
-        else if (d > 3) rate = 0.15; // Day 4-6
+        let rate = 0.05; // Default 10%
+        if (d > 6) rate = 0.10; // Day 7+
+        else if (d > 3) rate = 0.07; // Day 4-6
         
         // Interest calculation
         projectedTotal += Math.ceil(projectedTotal * rate);
@@ -5975,10 +5975,10 @@ async function checkLoanInterest(player) {
         // Apply Interest for each day passed
         for (let i = 0; i < daysPassed; i++) {
             currentDayCount++;
-            let rate = 0.10; // Default 10%
+            let rate = 0.05; // Default 10%
             
-            if (currentDayCount > 6) rate = 0.25; // Day 7+: 25% (Shark Mode)
-            else if (currentDayCount > 3) rate = 0.15; // Day 4-6: 15%
+            if (currentDayCount > 6) rate = 0.10; // Day 7+: 25% (Shark Mode)
+            else if (currentDayCount > 3) rate = 0.07; // Day 4-6: 15%
             
             // Compound Interest Formula
             const interest = Math.ceil(newDue * rate);
