@@ -3,6 +3,26 @@
 // Developer: Meraz Bin Mizanur
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
+// ==========================================================
+const CURRENT_APP_VERSION = "3.0.2"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+
+function checkAppVersion() {
+    const savedVersion = localStorage.getItem('slc_app_version');
+    
+    if (savedVersion !== CURRENT_APP_VERSION) {
+        // নতুন ভার্সন পাওয়া গেছে
+        console.log(`Updating App: ${savedVersion} -> ${CURRENT_APP_VERSION}`);
+        
+        // নতুন ভার্সন সেভ করা হচ্ছে
+        localStorage.setItem('slc_app_version', CURRENT_APP_VERSION);
+        
+        // ফোর্স রিলোড (ক্যাশ ক্লিয়ার সহ)
+        if (savedVersion) { // প্রথমবার লোড হলে রিলোড হবে না, শুধুমাত্র আপডেট হলে হবে
+            window.location.reload(true);
+        }
+    }
+}
+checkAppVersion();
 
 // --- 1. CONFIGURATION & INITIALIZATION ---
 const firebaseConfig = {
