@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "3.0.2"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.2"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -1795,7 +1795,14 @@ function renderEliteBracket() {
 }
 
 // --- 8. MATCH RESULTS & SCORING ---
+
 async function saveMatchResult() {
+    const btn = document.getElementById('btn-submit-result');
+if (btn && btn.disabled) return;
+if (btn) {
+    btn.disabled = true;
+    btn.innerText = "PROCESSING...";
+}
     const sH = parseInt(document.getElementById('res-s-h').value);
     const sA = parseInt(document.getElementById('res-s-a').value);
     const verifyId = document.getElementById('res-verify-id').value.trim().toUpperCase();
@@ -2079,10 +2086,12 @@ else if (reward.type === 'vault') {
     } catch (err) {
         console.error(err);
         notify("Sync Error", "x-circle");
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "Submit Result";
+        }
     }
 }
-
-
 
 // [UPDATED] openResultEntry: Uses Avatar Engine for pictures
 function openResultEntry(id) {
