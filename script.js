@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.2"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.3"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -6013,7 +6013,7 @@ async function repayLoan() {
 }
 
 // 1. TAKE LOAN LOGIC
-// --- UPDATED TAKE LOAN ACTION ---
+// --- UPDATED TAKE LOAN ACTION (WITH TIERED TRANSACTION FEES) ---
 async function takeLoan() {
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
@@ -6035,23 +6035,36 @@ async function takeLoan() {
     if (amount > limit) return notify(`Max limit is ${limit} BP`, "alert-triangle");
     if (isNaN(durationDays) || durationDays < 1) return notify("Invalid Duration", "clock");
     
+    // --- FEE CALCULATION LOGIC ---
+    let transactionFee = 10; // Default minimum fee (for 500 or less)
+    
+    if (amount > 800) {
+        transactionFee = 20; // For 1200 range
+    } else if (amount > 500) {
+        transactionFee = 15; // For 800 range
+    } else {
+        transactionFee = 10; // For 500 range
+    }
+    
+    const totalInitialDebt = amount + transactionFee;
     const now = Date.now();
     const deadline = now + (durationDays * 24 * 60 * 60 * 1000);
     
-    askConfirm(`Borrow ${amount} BP for ${durationDays} Days?`, async () => {
+    // Confirmation Dialog shows the fee
+    askConfirm(`Borrow ${amount} BP? (+${transactionFee} Fee)`, async () => {
         try {
             const batch = db.batch();
             const ref = db.collection("players").doc(myID);
             
-            // Give Money
+            // 1. Give Money (User receives exact requested amount, e.g., 500)
             batch.update(ref, { bounty: firebase.firestore.FieldValue.increment(amount) });
             
-            // Set Loan Data
+            // 2. Set Loan Data (But debt is set to Amount + Fee, e.g., 510)
             batch.update(ref, {
                 loan_data: {
                     active: true,
                     principal: amount,
-                    amountDue: amount, // Starts at principal, interest adds daily via checkLoanInterest
+                    amountDue: totalInitialDebt, // <--- Fee applies immediately here
                     takenAt: now,
                     deadline: deadline,
                     lastInterestApplied: now,
@@ -6060,7 +6073,7 @@ async function takeLoan() {
             });
             
             // Log it
-            logTransaction(myID, amount, 'Bank', `Loan Taken (${durationDays}d)`, batch);
+            logTransaction(myID, amount, 'Bank', `Loan Taken (Fee: ${transactionFee})`, batch);
             
             await batch.commit();
             notify(`Loan Received: +${amount} BP`, "landmark");
@@ -6073,7 +6086,6 @@ async function takeLoan() {
         }
     });
 }
-
 // 3. AUTOMATIC INTEREST CALCULATOR (Run on Refresh)
 async function checkLoanInterest(player) {
     if (!player.loan_data || !player.loan_data.active) return;
