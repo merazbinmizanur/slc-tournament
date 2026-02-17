@@ -3572,26 +3572,28 @@ function openSMS(matchId, target) {
     
     // Handle Round Number (Defaults to 'Standard' if not set, e.g. in Phase 2)
     const roundLabel = m.round ? `Round ${m.round}` : "Fixture";
+// 5. Construct Message
+const msg = 
+`RAMADAN MUBARAK
 
-    // 5. Construct Message
-    const msg = 
-`OFFICIAL SLC FIXTURE NOTICE
+OFFICIAL FIXTURE NOTIFICATION | SLC
 
-Attention ${recipient.name.toUpperCase()},
+DEAR ${recipient.name.toUpperCase()},
 
-Your Phase 0${m.phase} (${roundLabel}) match against ${opponent.name.toUpperCase()} has been officially scheduled for ${dateStr}.
-This fixture is active immediately and carries a strict deadline of ${deadlineTime}.
+This notice confirms your scheduled match for Phase 0${m.phase} (${roundLabel.toUpperCase()}). Please find the official fixture details below:
 
-PROTOCOL REQUIREMENTS:
-1. Login to the SLC Portal immediately.
-2. Verify your opponent's SLC-ID.
-3. Submit the final scoreline before the deadline.
+MATCH DETAILS
 
-PORTAL LINK:
-https://merazbinmizanur.github.io/slc-tournament
+● OPPONENT: ${opponent.name.toUpperCase()}
+● SCHEDULED DATE: ${dateStr}
+● COMPLETION DEADLINE: ${deadlineTime}
 
-Your verification ID is ${recipient.id}.
-- SLC OPERATIONS`;
+ACCESS & VERIFICATION
+Official Portal: https://merazbinmizanur.github.io/slc-tournament
+Your Verification ID: ${recipient.id}
+
+REGARDS,
+SYNTHEX LEGION CHRONICLES`;
 
     // 6. Open SMS App
     window.open(`sms:${recipient.phone}?body=${encodeURIComponent(msg)}`, '_self');
