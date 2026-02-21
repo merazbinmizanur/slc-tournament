@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.6"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.7"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -820,7 +820,16 @@ function renderBrokerBoard() {
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
             
             targets.forEach(t => {
+                // Check if target is already in a scheduled/played match
                 const isBusy = state.matches.some(m => m.phase === 2 && m.status === 'scheduled' && (m.homeId === t.id || m.awayId === t.id));
+                
+                // --- NEW FIX: Check if target has ANY pending challenge from ANYONE ---
+                const isNegotiating = state.matches.some(m =>
+                    m.phase === 2 &&
+                    m.status === 'pending' &&
+                    m.awayId === t.id // They are receiving a challenge
+                );
+                
                 const rank = getRankInfo(t.bounty);
                 
                 const hasScout = myPlayer?.active_effects?.scout;
@@ -830,6 +839,26 @@ function renderBrokerBoard() {
                     <button onclick="useScout('${t.id}')" class="col-span-2 mb-2 py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase hover:bg-emerald-900/60 transition-colors shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2">
                         <i data-lucide="scan" class="w-3 h-3"></i> Use Active Scout
                     </button>`;
+                }
+                
+                // Determine Action Area Content
+                let actionHTML = '';
+                
+                if (isNegotiating) {
+                    // --- NEW VISUAL: Lock the player if they are negotiating ---
+                    actionHTML = `
+                    <div class="col-span-2 py-3 bg-rose-900/20 border border-rose-500/20 rounded-2xl text-center flex flex-col items-center justify-center">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="lock" class="w-3 h-3 text-rose-500"></i>
+                            <span class="text-[8px] font-black text-rose-500 uppercase tracking-widest">NEGOTIATING...</span>
+                        </div>
+                        <p class="text-[6px] text-slate-500 uppercase font-bold mt-1">Player has a pending challenge</p>
+                    </div>`;
+                } else {
+                    // Normal Buttons
+                    actionHTML = `
+                    <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" ${isBusy ? 'disabled' : ''} class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 disabled:opacity-20 hover:bg-white/5 transition-colors">Standard</button>
+                    <button onclick="sendChallenge('${myID}', '${t.id}', 'high')" ${isBusy ? 'disabled' : ''} class="py-3 bg-blue-600 rounded-2xl text-[8px] font-black text-white uppercase active:scale-95 shadow-lg shadow-blue-900/40 disabled:opacity-20 hover:bg-blue-500 transition-colors">High Stake</button>`;
                 }
                 
                 const card = document.createElement('div');
@@ -851,8 +880,8 @@ function renderBrokerBoard() {
                         </div>
                         
                         <div class="grid grid-cols-2 gap-3">
-                            ${scoutBtnHTML} <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" ${isBusy ? 'disabled' : ''} class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 disabled:opacity-20 hover:bg-white/5 transition-colors">Standard</button>
-                            <button onclick="sendChallenge('${myID}', '${t.id}', 'high')" ${isBusy ? 'disabled' : ''} class="py-3 bg-blue-600 rounded-2xl text-[8px] font-black text-white uppercase active:scale-95 shadow-lg shadow-blue-900/40 disabled:opacity-20 hover:bg-blue-500 transition-colors">High Stake</button>
+                            ${scoutBtnHTML} 
+                            ${actionHTML}
                         </div>
                     </div>`;
                 container.appendChild(card);
@@ -988,7 +1017,8 @@ async function sendChallenge(hunterId, targetId, type) {
   const target = state.players.find(p => p.id === targetId);
   
   // --- STRICT BUSY CHECK (SECURITY LAYER 1) ---
-  // টার্গেটের কাছে যদি অলরেডি কোনো রিকোয়েস্ট (Pending) থাকে, তবে শুরুতেই থামিয়ে দিবে।
+  // Check if the target is ALREADY receiving a request from ANYONE.
+  // If 'awayId' equals targetId and status is 'pending', they are busy negotiating.
   const isTargetBusy = state.matches.some(m =>
     m.phase === 2 &&
     m.status === 'pending' &&
@@ -1023,8 +1053,12 @@ async function sendChallenge(hunterId, targetId, type) {
   // 4. CONFIRMATION & EXECUTION
   askConfirm(msg, async () => {
     // --- ANTI-RACE CONDITION CHECK (SECURITY LAYER 2) ---
-    // Confirm এ ক্লিক করার ঠিক আগ মুহূর্তেও যদি কেউ রিকোয়েস্ট পাঠিয়ে দেয়, এটি তা আটকাবে।
-    const doubleCheckBusy = state.matches.some(m => m.phase === 2 && m.status === 'pending' && m.awayId === targetId);
+    // Verify one last time before writing to DB in case someone else sent a request while the modal was open.
+    const doubleCheckBusy = state.matches.some(m =>
+      m.phase === 2 &&
+      m.status === 'pending' &&
+      m.awayId === targetId
+    );
     
     if (doubleCheckBusy) {
       return notify("Too Late! Target just received another request.", "clock");
@@ -1043,7 +1077,7 @@ async function sendChallenge(hunterId, targetId, type) {
         createdAt: Date.now()
       });
       
-      notify(`Request Sent: ${type === 'high' ? '30%' : '15%'} ${type.toUpperCase()}`, "send");
+      notify(`Request Sent to ${target.name}!`, "send");
       
       // Refresh UI Instantly
       if (typeof renderBrokerBoard === 'function') {
