@@ -984,15 +984,16 @@ async function claimAutoWin(matchId) {
 }
 
 async function sendChallenge(hunterId, targetId, type) {
-        const hunter = state.players.find(p => p.id === hunterId);
-        
-        // --- NEW: COUNT PENDING REQUESTS ---
-        const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
-        const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
-        
-        // Check Limits (Active Slots + Pending Requests)
-        if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
-        if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
+    const hunter = state.players.find(p => p.id === hunterId);
+    
+    // --- NEW: COUNT PENDING REQUESTS ---
+    const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
+    const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
+    
+    // Check Limits (Active Slots + Pending Requests)
+    if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
+    if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
+    
     const target = state.players.find(p => p.id === targetId);
 
     if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
@@ -1002,16 +1003,24 @@ async function sendChallenge(hunterId, targetId, type) {
     if (type === 'high' && (target.p2High || 0) >= P2_LIMIT_HIGH) return notify("Target High slots full", "user-minus");
     if (type === 'std' && (target.p2Std || 0) >= P2_LIMIT_STD) return notify("Target Standard slots full", "user-minus");
 
-    const rate = type === 'high' ? 30 : 15;
-    const mid = `p2-req-${Date.now()}`;
+    // --- ADDED: Confirmation Dialog ---
+    const numericRate = type === 'high' ? 0.30 : 0.15;
+    const estPool = Math.floor((hunter.bounty + target.bounty) * numericRate);
+    const msg = `SEND CHALLENGE?\n\nTarget: ${target.name}\nType: ${type.toUpperCase()} (${type === 'high' ? '30%' : '15%'})\nEst. Reward: ${estPool} BP`;
 
-    try {
-        await db.collection("matches").doc(mid).set({
-            id: mid, homeId: hunterId, awayId: targetId, status: 'pending', phase: 2,
-            stakeType: type, stakeRate: rate, createdAt: Date.now()
-        });
-        notify(`Request Sent: ${rate}% ${type.toUpperCase()}`, "send");
-    } catch (e) { notify("Cloud error", "x-circle"); }
+    askConfirm(msg, async () => {
+        // Original Execution Logic (Now Inside Confirmation)
+        const rate = type === 'high' ? 30 : 15;
+        const mid = `p2-req-${Date.now()}`;
+
+        try {
+            await db.collection("matches").doc(mid).set({
+                id: mid, homeId: hunterId, awayId: targetId, status: 'pending', phase: 2,
+                stakeType: type, stakeRate: rate, createdAt: Date.now()
+            });
+            notify(`Request Sent: ${rate}% ${type.toUpperCase()}`, "send");
+        } catch (e) { notify("Cloud error", "x-circle"); }
+    });
 }
 
 async function respondToChallenge(matchId, action) {
