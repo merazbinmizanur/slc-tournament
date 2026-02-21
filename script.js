@@ -664,7 +664,7 @@ function checkPhaseLocks() {
 
 
 function renderBrokerBoard() {
-    const container = document.getElementById('broker-board');
+    const container = document.getElementById('arena-board');
     if (!container) return;
     container.innerHTML = '';
     
