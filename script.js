@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.4"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.5"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -986,7 +986,7 @@ async function claimAutoWin(matchId) {
 async function sendChallenge(hunterId, targetId, type) {
     const hunter = state.players.find(p => p.id === hunterId);
     
-    // --- NEW: COUNT PENDING REQUESTS ---
+    // --- 1. COUNT PENDING REQUESTS (Hunter Side) ---
     const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
     const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
     
@@ -996,6 +996,19 @@ async function sendChallenge(hunterId, targetId, type) {
     
     const target = state.players.find(p => p.id === targetId);
 
+    // --- 2. NEW CHECK: IS TARGET BUSY? (Incoming Request Check) ---
+    // এই অংশটি চেক করবে টার্গেটের কাছে ইতিমধ্যে কোনো ইনকামিং রিকোয়েস্ট আছে কি না
+    const isTargetBusy = state.matches.some(m => 
+        m.phase === 2 && 
+        m.status === 'pending' && 
+        m.awayId === targetId // Target is the receiver
+    );
+
+    if (isTargetBusy) {
+        return notify("Target has a PENDING request! Wait for response.", "lock");
+    }
+    // -------------------------------------------------------------
+
     if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
 
     if (type === 'high' && (hunter.p2High || 0) >= P2_LIMIT_HIGH) return notify("High Stake limit reached (3/3)", "alert-triangle");
@@ -1003,26 +1016,26 @@ async function sendChallenge(hunterId, targetId, type) {
     if (type === 'high' && (target.p2High || 0) >= P2_LIMIT_HIGH) return notify("Target High slots full", "user-minus");
     if (type === 'std' && (target.p2Std || 0) >= P2_LIMIT_STD) return notify("Target Standard slots full", "user-minus");
 
-    // --- ADDED: Confirmation Dialog ---
+    // --- 3. CONFIRMATION LOGIC ---
     const numericRate = type === 'high' ? 0.30 : 0.15;
     const estPool = Math.floor((hunter.bounty + target.bounty) * numericRate);
     const msg = `SEND CHALLENGE?\n\nTarget: ${target.name}\nType: ${type.toUpperCase()} (${type === 'high' ? '30%' : '15%'})\nEst. Reward: ${estPool} BP`;
 
     askConfirm(msg, async () => {
-        // Original Execution Logic (Now Inside Confirmation)
-        const rate = type === 'high' ? 30 : 15;
         const mid = `p2-req-${Date.now()}`;
-
         try {
             await db.collection("matches").doc(mid).set({
                 id: mid, homeId: hunterId, awayId: targetId, status: 'pending', phase: 2,
-                stakeType: type, stakeRate: rate, createdAt: Date.now()
+                stakeType: type, stakeRate: type === 'high' ? 30 : 15, createdAt: Date.now()
             });
-            notify(`Request Sent: ${rate}% ${type.toUpperCase()}`, "send");
+            notify(`Request Sent: ${type === 'high' ? '30%' : '15%'} ${type.toUpperCase()}`, "send");
+            
+            if(typeof renderBrokerBoard === 'function') {
+                setTimeout(() => renderBrokerBoard(), 200);
+            }
         } catch (e) { notify("Cloud error", "x-circle"); }
     });
 }
-
 async function respondToChallenge(matchId, action) {
     const match = state.matches.find(m => m.id === matchId);
     if (!match) return notify("Match missing", "x-octagon");
