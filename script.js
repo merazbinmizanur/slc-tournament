@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.5"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.6"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -982,60 +982,80 @@ async function claimAutoWin(matchId) {
         }
     });
 }
-
 async function sendChallenge(hunterId, targetId, type) {
-    const hunter = state.players.find(p => p.id === hunterId);
+  // 1. Identify Players
+  const hunter = state.players.find(p => p.id === hunterId);
+  const target = state.players.find(p => p.id === targetId);
+  
+  // --- STRICT BUSY CHECK (SECURITY LAYER 1) ---
+  // টার্গেটের কাছে যদি অলরেডি কোনো রিকোয়েস্ট (Pending) থাকে, তবে শুরুতেই থামিয়ে দিবে।
+  const isTargetBusy = state.matches.some(m =>
+    m.phase === 2 &&
+    m.status === 'pending' &&
+    m.awayId === targetId // Target is the receiver
+  );
+  
+  if (isTargetBusy) {
+    return notify("Action Failed: Target is currently in negotiation.", "x-octagon");
+  }
+  // -----------------------------------
+  
+  // 2. Hunter Validations
+  if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
+  
+  // Count Hunter's OWN Pending Requests (To enforce their limits)
+  const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
+  const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
+  
+  // Check Hunter Limits (Active + Pending)
+  if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
+  if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
+  
+  // Check Target Slot Availability (Ensure they haven't finished their quota)
+  if (type === 'high' && (target.p2High || 0) >= 3) return notify("Target's High Slots Full", "user-minus");
+  if (type === 'std' && (target.p2Std || 0) >= 2) return notify("Target's Standard Slots Full", "user-minus");
+  
+  // 3. PREPARE CONFIRMATION DATA
+  const numericRate = type === 'high' ? 0.30 : 0.15;
+  const estPool = Math.floor((hunter.bounty + target.bounty) * numericRate);
+  const msg = `SEND CHALLENGE?\n\nTarget: ${target.name}\nType: ${type.toUpperCase()} (${type === 'high' ? '30%' : '15%'})\nEst. Reward: ${estPool} BP`;
+  
+  // 4. CONFIRMATION & EXECUTION
+  askConfirm(msg, async () => {
+    // --- ANTI-RACE CONDITION CHECK (SECURITY LAYER 2) ---
+    // Confirm এ ক্লিক করার ঠিক আগ মুহূর্তেও যদি কেউ রিকোয়েস্ট পাঠিয়ে দেয়, এটি তা আটকাবে।
+    const doubleCheckBusy = state.matches.some(m => m.phase === 2 && m.status === 'pending' && m.awayId === targetId);
     
-    // --- 1. COUNT PENDING REQUESTS (Hunter Side) ---
-    const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
-    const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
-    
-    // Check Limits (Active Slots + Pending Requests)
-    if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
-    if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
-    
-    const target = state.players.find(p => p.id === targetId);
-
-    // --- 2. NEW CHECK: IS TARGET BUSY? (Incoming Request Check) ---
-    // এই অংশটি চেক করবে টার্গেটের কাছে ইতিমধ্যে কোনো ইনকামিং রিকোয়েস্ট আছে কি না
-    const isTargetBusy = state.matches.some(m => 
-        m.phase === 2 && 
-        m.status === 'pending' && 
-        m.awayId === targetId // Target is the receiver
-    );
-
-    if (isTargetBusy) {
-        return notify("Target has a PENDING request! Wait for response.", "lock");
+    if (doubleCheckBusy) {
+      return notify("Too Late! Target just received another request.", "clock");
     }
-    // -------------------------------------------------------------
-
-    if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
-
-    if (type === 'high' && (hunter.p2High || 0) >= P2_LIMIT_HIGH) return notify("High Stake limit reached (3/3)", "alert-triangle");
-    if (type === 'std' && (hunter.p2Std || 0) >= P2_LIMIT_STD) return notify("Standard limit reached (2/2)", "alert-triangle");
-    if (type === 'high' && (target.p2High || 0) >= P2_LIMIT_HIGH) return notify("Target High slots full", "user-minus");
-    if (type === 'std' && (target.p2Std || 0) >= P2_LIMIT_STD) return notify("Target Standard slots full", "user-minus");
-
-    // --- 3. CONFIRMATION LOGIC ---
-    const numericRate = type === 'high' ? 0.30 : 0.15;
-    const estPool = Math.floor((hunter.bounty + target.bounty) * numericRate);
-    const msg = `SEND CHALLENGE?\n\nTarget: ${target.name}\nType: ${type.toUpperCase()} (${type === 'high' ? '30%' : '15%'})\nEst. Reward: ${estPool} BP`;
-
-    askConfirm(msg, async () => {
-        const mid = `p2-req-${Date.now()}`;
-        try {
-            await db.collection("matches").doc(mid).set({
-                id: mid, homeId: hunterId, awayId: targetId, status: 'pending', phase: 2,
-                stakeType: type, stakeRate: type === 'high' ? 30 : 15, createdAt: Date.now()
-            });
-            notify(`Request Sent: ${type === 'high' ? '30%' : '15%'} ${type.toUpperCase()}`, "send");
-            
-            if(typeof renderBrokerBoard === 'function') {
-                setTimeout(() => renderBrokerBoard(), 200);
-            }
-        } catch (e) { notify("Cloud error", "x-circle"); }
-    });
+    
+    const mid = `p2-req-${Date.now()}`;
+    try {
+      await db.collection("matches").doc(mid).set({
+        id: mid,
+        homeId: hunterId,
+        awayId: targetId,
+        status: 'pending',
+        phase: 2,
+        stakeType: type,
+        stakeRate: type === 'high' ? 30 : 15,
+        createdAt: Date.now()
+      });
+      
+      notify(`Request Sent: ${type === 'high' ? '30%' : '15%'} ${type.toUpperCase()}`, "send");
+      
+      // Refresh UI Instantly
+      if (typeof renderBrokerBoard === 'function') {
+        setTimeout(() => renderBrokerBoard(), 200);
+      }
+    } catch (e) {
+      console.error(e);
+      notify("Cloud error: Check connection", "x-circle");
+    }
+  });
 }
+
 async function respondToChallenge(matchId, action) {
     const match = state.matches.find(m => m.id === matchId);
     if (!match) return notify("Match missing", "x-octagon");
