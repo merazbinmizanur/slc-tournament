@@ -663,8 +663,6 @@ function checkPhaseLocks() {
 }
 
 
-// --- 5. PHASE 2: THE BROKER BOARD (MARKET) ---
-
 function renderBrokerBoard() {
     const container = document.getElementById('broker-board');
     if (!container) return;
@@ -692,16 +690,103 @@ function renderBrokerBoard() {
             const dashDiv = document.createElement('div');
             dashDiv.className = "w-full space-y-4 mb-10";
             dashDiv.innerHTML = `<h4 class="text-[8px] font-black text-gold-500 uppercase tracking-[0.2em] text-center mb-2">Active Negotiations</h4>`;
+            
             myChallenges.forEach(m => {
                 const isTarget = m.awayId === myID;
                 const challenger = state.players.find(p => p.id === m.homeId);
                 const target = state.players.find(p => p.id === m.awayId);
                 const opp = isTarget ? challenger : target;
                 
+                // --- 15 HOUR TIMER & AUTO-WIN LOGIC ---
+                const createdTime = m.createdAt || Date.now();
+                const timeLimit = 15 * 60 * 60 * 1000; // 15 Hours
+                const expireTime = createdTime + timeLimit;
+                const now = Date.now();
+                const timeLeft = expireTime - now;
+                
+                let statusHTML = '';
+                let timerDisplay = '';
+                let msgText = '';
+                
+                if (timeLeft > 0) {
+                    // === MATCH IS LIVE (TIMER RUNNING) ===
+                    const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+                    const mins = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    timerDisplay = `
+                    <div class="flex items-center gap-2 mt-2 bg-slate-950/50 p-2 rounded-lg border border-white/5 justify-center">
+                        <i data-lucide="clock" class="w-3 h-3 text-blue-400 animate-pulse"></i>
+                        <span class="text-[9px] font-black text-white font-mono tracking-widest">
+                            AUTO-WIN IN: ${hours}h ${mins}m
+                        </span>
+                    </div>`;
+                    
+                    msgText = `
+                    <p class="text-[8px] text-slate-400 font-bold text-center mt-3 px-2 leading-relaxed border-t border-white/5 pt-2">
+                        "Please knock him on Synthex Legion Chronicle's Messenger Group for accept the challenge or decline the challenge immediately"
+                    </p>`;
+                    
+                    // === BUTTONS WITH LIMITATION LOGIC ===
+                    if (isTarget || state.isAdmin) {
+                        // MERGED: Check Decline Limits Here
+                        const declinesUsed = target?.p2Declines || 0;
+                        const limitReached = declinesUsed >= 3;
+                        
+                        let declineBtnHTML = '';
+                        
+                        if (limitReached && !state.isAdmin) {
+                            // LOCKED: 3/3 Used
+                            declineBtnHTML = `
+                            <button onclick="notify('Limit Reached: You used 3/3 Declines. You must fight.', 'lock')" 
+                                class="flex-1 py-3 bg-slate-800 text-slate-500 border border-slate-700 text-[9px] font-black rounded-xl uppercase cursor-not-allowed">
+                                Limit (3/3)
+                            </button>`;
+                        } else {
+                            // ACTIVE: Can still decline
+                            declineBtnHTML = `
+                            <button onclick="respondToChallenge('${m.id}', 'decline')" 
+                                class="flex-1 py-3 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all">
+                                Decline (${declinesUsed}/3)
+                            </button>`;
+                        }
+                        
+                        statusHTML = `
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="respondToChallenge('${m.id}', 'accept')" class="flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg">Accept</button>
+                            ${declineBtnHTML}
+                        </div>`;
+                    } else {
+                        statusHTML = `<div class="py-3 mt-3 bg-white/5 border border-white/5 rounded-xl text-center"><p class="text-[7px] text-slate-500 italic uppercase font-black tracking-widest animate-pulse">Waiting for Response...</p></div>`;
+                    }
+                    
+                } else {
+                    // === MATCH EXPIRED (15 HOURS PASSED) ===
+                    timerDisplay = `
+                    <div class="flex items-center gap-2 mt-2 bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/30 justify-center">
+                        <i data-lucide="check-circle" class="w-3 h-3 text-emerald-500"></i>
+                        <span class="text-[9px] font-black text-emerald-500 font-mono tracking-widest">
+                            TIMEOUT: AUTO-WIN AVAILABLE
+                        </span>
+                    </div>`;
+                    
+                    if (!isTarget) {
+                        // Challenger sees the Win Button
+                        const winType = m.stakeType === 'high' ? '30%' : '15%';
+                        statusHTML = `
+                        <button onclick="claimAutoWin('${m.id}')" class="w-full mt-3 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg shadow-emerald-900/20">
+                            CLAIM AUTO-WIN (${winType} POOL)
+                        </button>
+                        <p class="text-[7px] text-slate-500 text-center mt-1">Opponent unresponsive. Match counts as played.</p>`;
+                    } else {
+                        // Target sees they lost
+                        statusHTML = `<div class="py-3 mt-3 bg-rose-900/20 border border-rose-500/20 rounded-xl text-center"><p class="text-[7px] text-rose-500 italic uppercase font-black tracking-widest">You forfeited by timeout.</p></div>`;
+                    }
+                }
+                
                 dashDiv.innerHTML += `
                     <div class="moving-border-gold p-[1px] rounded-[2.1rem] mb-3 animate-pop-in">
                         <div class="bg-slate-900 rounded-[2rem] p-5 relative z-10">
-                            <div class="flex justify-between items-center mb-4">
+                            <div class="flex justify-between items-center mb-2">
                                 <div class="flex items-center gap-3">
                                     ${getAvatarUI(opp, "w-10", "h-10")}
                                     <div class="flex flex-col">
@@ -713,7 +798,10 @@ function renderBrokerBoard() {
                                     <span class="text-[8px] font-black text-gold-400 uppercase">${m.stakeRate}% ${m.stakeType.toUpperCase()}</span>
                                 </div>
                             </div>
-                            ${(isTarget || state.isAdmin) ? `<div class="flex gap-2"><button onclick="respondToChallenge('${m.id}', 'accept')" class="flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all">Accept</button><button onclick="respondToChallenge('${m.id}', 'decline')" class="flex-1 py-3 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all">Decline</button></div>` : `<div class="py-3 bg-white/5 border border-white/5 rounded-xl text-center"><p class="text-[7px] text-slate-500 italic uppercase font-black tracking-widest animate-pulse">Awaiting Approval</p></div>`}
+                            
+                            ${timerDisplay}
+                            ${msgText}
+                            ${statusHTML}
                         </div>
                     </div>`;
             });
@@ -724,30 +812,26 @@ function renderBrokerBoard() {
         if (!myPlayer && !state.isAdmin) {
             container.innerHTML += `<p class="text-center py-10 text-slate-500 text-[8px] font-black uppercase">Please Login as Player to see Targets</p>`;
         } else {
-            // Filter targets: Not me, Not already matched
             const targets = [...state.players]
-                .filter(p => p.id !== myID && !state.matches.some(m => m.phase === 2 && m.status !== 'declined' && ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))))
+                .filter(p => p.id !== myID && !state.matches.some(m => m.phase === 2 && m.status !== 'declined' && m.status !== 'timeout_forfeit' && ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))))
                 .sort((a, b) => Math.abs(a.bounty - (myPlayer?.bounty || 0)) - Math.abs(b.bounty - (myPlayer?.bounty || 0)))
                 .slice(0, 5);
-
+            
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
             
             targets.forEach(t => {
                 const isBusy = state.matches.some(m => m.phase === 2 && m.status === 'scheduled' && (m.homeId === t.id || m.awayId === t.id));
                 const rank = getRankInfo(t.bounty);
                 
-                // --- NEW SCOUT LOGIC START ---
                 const hasScout = myPlayer?.active_effects?.scout;
                 let scoutBtnHTML = '';
-                
                 if (hasScout) {
                     scoutBtnHTML = `
                     <button onclick="useScout('${t.id}')" class="col-span-2 mb-2 py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase hover:bg-emerald-900/60 transition-colors shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2">
                         <i data-lucide="scan" class="w-3 h-3"></i> Use Active Scout
                     </button>`;
                 }
-                // --- NEW SCOUT LOGIC END ---
-
+                
                 const card = document.createElement('div');
                 card.className = "moving-border-blue p-[1px] rounded-[2.6rem] mb-5 w-full max-w-[340px] mx-auto shadow-xl block";
                 card.innerHTML = `
@@ -803,11 +887,112 @@ function renderBrokerBoard() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-
-
+async function claimAutoWin(matchId) {
+    // 1. Fetch FRESH match data (Security: Prevent Double Claims)
+    // We fetch directly from DB to avoid local state lag
+    const matchDoc = await db.collection("matches").doc(matchId).get();
+    
+    if (!matchDoc.exists) return notify("Match data not found", "x-circle");
+    const match = matchDoc.data();
+    
+    // 2. Strict Status & Time Validation
+    if (match.status !== 'pending') {
+        return notify("Reward already claimed or match active!", "alert-circle");
+    }
+    
+    const timeLimit = 15 * 60 * 60 * 1000; // 15 Hours
+    const now = Date.now();
+    const expireTime = (match.createdAt || 0) + timeLimit;
+    
+    if (now < expireTime) {
+        return notify("Timer has not expired yet!", "clock");
+    }
+    
+    // 3. Identify Players (Local state is fine for names/current BP reference)
+    const h = state.players.find(p => p.id === match.homeId); // Challenger (Winner)
+    const t = state.players.find(p => p.id === match.awayId); // Target (Loser)
+    
+    if (!h || !t) return notify("Player data missing", "users");
+    
+    // 4. Calculate Financials (Full Match Pool)
+    // Determine rate based on recorded type
+    const rate = match.stakeRate || (match.stakeType === 'high' ? 30 : 15);
+    // Formula: (ChallengerBP + TargetBP) * Percentage
+    const pool = Math.floor((h.bounty + t.bounty) * (rate / 100));
+    
+    // 5. Identify which slot counter to increment (High vs Std)
+    const slotField = match.stakeType === 'high' ? 'p2High' : 'p2Std';
+    
+    // 6. Execute Transaction
+    askConfirm(`Opponent Timeout! Claim Auto-Win?\nReward: ${pool} BP\n(Counts as 1 Match Played)`, async () => {
+        try {
+            const batch = db.batch();
+            
+            // --- A. WINNER UPDATES (Challenger) ---
+            const hRef = db.collection("players").doc(h.id);
+            batch.update(hRef, {
+                bounty: firebase.firestore.FieldValue.increment(pool),
+                wins: firebase.firestore.FieldValue.increment(1),
+                mp: firebase.firestore.FieldValue.increment(1),
+                goals: firebase.firestore.FieldValue.increment(3), // Standard forfeit score (3-0)
+                [slotField]: firebase.firestore.FieldValue.increment(1) // Consumes a slot
+            });
+            
+            // --- B. LOSER UPDATES (Target) ---
+            const tRef = db.collection("players").doc(t.id);
+            batch.update(tRef, {
+                bounty: firebase.firestore.FieldValue.increment(-pool),
+                losses: firebase.firestore.FieldValue.increment(1),
+                mp: firebase.firestore.FieldValue.increment(1),
+                // Note: Loser gets 0 goals
+                [slotField]: firebase.firestore.FieldValue.increment(1) // Consumes a slot (Penalty)
+            });
+            
+            // --- C. MATCH UPDATES ---
+            const mRef = db.collection("matches").doc(matchId);
+            batch.update(mRef, {
+                status: 'played',
+                score: { h: 3, a: 0 }, // Auto 3-0 Score
+                winnerId: h.id,
+                resultDelta: { h: pool, a: -pool }, // Record financial shift
+                submittedBy: 'System Auto-Win',
+                endedAt: Date.now()
+            });
+            
+            // --- D. LOG TRANSACTIONS (Atomic Batch) ---
+            // Challenger Log
+            logTransaction(h.id, pool, 'Match Win', `Auto-Win (Timeout) vs ${t.name}`, batch);
+            // Target Log
+            logTransaction(t.id, -pool, 'Match Loss', `Forfeit (Timeout) vs ${h.name}`, batch);
+            
+            // --- E. COMMIT ---
+            await batch.commit();
+            
+            notify(`Victory Claimed! +${pool} BP`, "trophy");
+            
+            // Refresh UI to remove the pending card immediately
+            if (typeof renderBrokerBoard === 'function') {
+                // Small delay to allow DB propagation
+                setTimeout(() => renderBrokerBoard(), 200);
+            }
+            
+        } catch (e) {
+            console.error("Auto-Win Error:", e);
+            notify("Error processing claim", "x-circle");
+        }
+    });
+}
 
 async function sendChallenge(hunterId, targetId, type) {
-    const hunter = state.players.find(p => p.id === hunterId);
+        const hunter = state.players.find(p => p.id === hunterId);
+        
+        // --- NEW: COUNT PENDING REQUESTS ---
+        const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
+        const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
+        
+        // Check Limits (Active Slots + Pending Requests)
+        if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
+        if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
     const target = state.players.find(p => p.id === targetId);
 
     if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
@@ -829,86 +1014,80 @@ async function sendChallenge(hunterId, targetId, type) {
     } catch (e) { notify("Cloud error", "x-circle"); }
 }
 
-/**
- * PHASE 2: RESPOND TO CHALLENGE
- * Handles the acceptance or decline of a match request.
- * If declined without a pass, 5% of the target's BP is transferred to the challenger.
- */
 async function respondToChallenge(matchId, action) {
     const match = state.matches.find(m => m.id === matchId);
     if (!match) return notify("Match missing", "x-octagon");
 
-    const h = state.players.find(p => p.id === match.homeId); // The Challenger (Hunter)
-    const t = state.players.find(p => p.id === match.awayId); // The Target (Requested Player)
+    const h = state.players.find(p => p.id === match.homeId); // The Challenger
+    const t = state.players.find(p => p.id === match.awayId); // The Target (You)
+
+    // --- NEW: FETCH DECLINE COUNT ---
+    const currentDeclines = t.p2Declines || 0;
 
     if (action === 'accept') {
-        // Validation: Ensure slots are still available before accepting
-        if (match.stakeType === 'high' && ((h.p2High || 0) >= 3 || (t.p2High || 0) >= 3)) {
-            return notify("Slot Error: Limit reached", "alert-triangle");
-        }
-        if (match.stakeType === 'std' && ((h.p2Std || 0) >= 2 || (t.p2Std || 0) >= 2)) {
-            return notify("Slot Error: Limit reached", "alert-triangle");
-        }
+        // ... (Existing Slot Check Logic remains same) ...
+        if (match.stakeType === 'high' && ((h.p2High || 0) >= 3 || (t.p2High || 0) >= 3)) return notify("Slot Error: Limit reached", "alert-triangle");
+        if (match.stakeType === 'std' && ((h.p2Std || 0) >= 2 || (t.p2Std || 0) >= 2)) return notify("Slot Error: Limit reached", "alert-triangle");
 
         try {
             const batch = db.batch();
             const field = match.stakeType === 'high' ? 'p2High' : 'p2Std';
             
-            // Increment match counts for both players
             batch.update(db.collection("players").doc(h.id), { [field]: firebase.firestore.FieldValue.increment(1) });
             batch.update(db.collection("players").doc(t.id), { [field]: firebase.firestore.FieldValue.increment(1) });
-            
-            // Move match to scheduled status
-            batch.update(db.collection("matches").doc(matchId), { status: 'scheduled' });
+            batch.update(db.collection("matches").doc(matchId), { status: 'scheduled' }); // Becomes 'Option B' (Hidden until Admin sets date)
             
             await batch.commit();
             notify("Contract Scheduled!", "check-circle");
-        } catch (e) { 
-            console.error(e);
-            notify("Sync Failed", "x-circle"); 
-        }
+        } catch (e) { notify("Sync Failed", "x-circle"); }
     } 
     else {
-        // --- UPDATED DECLINE LOGIC: 5% FEE TRANSFERRED TO HUNTER ---
+        // --- NEW: DECLINE LIMIT CHECK ---
+        if (currentDeclines >= 3 && !state.isAdmin) {
+            return notify("Decline Limit Reached (3/3). You MUST Accept.", "lock");
+        }
+
         const activeEff = t.active_effects || {};
         
-        // Check if player has a Decline Pass active
+        // Logic: Did they use a pass?
         if (activeEff.decline_pass) {
-             askConfirm("Use DECLINE PASS to waive penalty?", async () => {
+             askConfirm(`Use DECLINE PASS? (Count: ${currentDeclines + 1}/3)`, async () => {
                 const batch = db.batch();
-                batch.update(db.collection("players").doc(t.id), { "active_effects.decline_pass": false });
+                batch.update(db.collection("players").doc(t.id), { 
+                    "active_effects.decline_pass": false,
+                    "p2Declines": firebase.firestore.FieldValue.increment(1) // Still increments count!
+                });
                 batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
                 await batch.commit();
-                notify("Declined using Pass (0 BP)", "shield-check");
+                notify(`Declined (Pass Used). Count: ${currentDeclines + 1}/3`, "shield-check");
              });
         } else {
-            // Calculate 5% Penalty of the Target's current Bounty
+            // Logic: Pay the 5% Penalty
             const penalty = Math.floor(t.bounty * 0.05);
             
-            askConfirm(`Refusing pays 5% (${penalty} BP) to ${h.name}. Confirm?`, async () => {
+            askConfirm(`Refuse for 5% (${penalty} BP)? (Count: ${currentDeclines + 1}/3)`, async () => {
                 try {
                     const batch = db.batch();
                     
-                    // Mark match as declined
                     batch.update(db.collection("matches").doc(matchId), { status: 'declined' });
                     
-                    // Deduct 5% from the Target (t)
+                    // Transfer Money
                     batch.update(db.collection("players").doc(t.id), { 
-                        bounty: firebase.firestore.FieldValue.increment(-penalty) 
+                        bounty: firebase.firestore.FieldValue.increment(-penalty),
+                        p2Declines: firebase.firestore.FieldValue.increment(1) // INCREMENT COUNT
                     });
                     
-                    // Add 5% to the Challenger (h)
                     batch.update(db.collection("players").doc(h.id), { 
                         bounty: firebase.firestore.FieldValue.increment(penalty) 
                     });
                     
+                    // Log Transaction
+                    logTransaction(t.id, -penalty, 'Fine', `Declined Match (${currentDeclines + 1}/3)`, batch);
+                    logTransaction(h.id, penalty, 'Reward', `${t.name} Paid Decline Fee`, batch);
+                    
                     await batch.commit();
                     
-                    // Log transactions for both players to maintain history
-                    logTransaction(t.id, -penalty, 'Fine', `Declined Match from ${h.name}`);
-                    logTransaction(h.id, penalty, 'Reward', `${t.name} Paid Decline Fee`);
-                    
-                    notify(`Match Declined. ${penalty} BP transferred to ${h.name}`, "thumbs-down");
+                    notify(`Declined. ${penalty} BP Paid. Count: ${currentDeclines + 1}/3`, "thumbs-down");
                 } catch (e) {
                     console.error(e);
                     notify("Cloud transfer failed", "x-circle");
@@ -917,7 +1096,6 @@ async function respondToChallenge(matchId, action) {
         }
     }
 }
-
 async function buyPass(type) {
     const myID = localStorage.getItem('slc_user_id');
     const me = state.players.find(p => p.id === myID);
