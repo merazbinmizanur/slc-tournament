@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.7"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.8"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -1016,9 +1016,8 @@ async function sendChallenge(hunterId, targetId, type) {
   const hunter = state.players.find(p => p.id === hunterId);
   const target = state.players.find(p => p.id === targetId);
   
-  // --- STRICT BUSY CHECK (SECURITY LAYER 1) ---
-  // Check if the target is ALREADY receiving a request from ANYONE.
-  // If 'awayId' equals targetId and status is 'pending', they are busy negotiating.
+  // --- STRICT BUSY CHECK (SECURITY LAYER 1: TARGET) ---
+  // টার্গেটের কাছে যদি অলরেডি কোনো রিকোয়েস্ট (Pending) থাকে, তবে শুরুতেই থামিয়ে দিবে।
   const isTargetBusy = state.matches.some(m =>
     m.phase === 2 &&
     m.status === 'pending' &&
@@ -1030,16 +1029,48 @@ async function sendChallenge(hunterId, targetId, type) {
   }
   // -----------------------------------
   
+  // --- SEQUENTIAL MATCH LOGIC (SECURITY LAYER 2: HUNTER) ---
+  // আপনার নতুন রিকোয়ারমেন্ট অনুযায়ী লজিক:
+  
+  // ১. হান্টারের বর্তমান অ্যাক্টিভ (পেন্ডিং বা শিডিউলড) ম্যাচগুলো বের করা
+  const myActiveMatches = state.matches.filter(m =>
+    m.phase === 2 &&
+    (m.status === 'pending' || m.status === 'scheduled') &&
+    (m.homeId === hunterId || m.awayId === hunterId)
+  );
+  
+  const hasActiveHigh = myActiveMatches.some(m => m.stakeType === 'high'); // ৩০% ম্যাচ আছে কিনা
+  const hasActiveStd = myActiveMatches.some(m => m.stakeType === 'std'); // ১৫% ম্যাচ আছে কিনা
+  
+  // কন্ডিশন ১: যদি ৩০% (High Stake) চ্যালেঞ্জ করতে চান
+  // নিয়ম: আপনার হাতে কোনো ম্যাচ (৩০% বা ১৫%) পেন্ডিং থাকা যাবে না। সম্পূর্ণ ফ্রি থাকতে হবে।
+  if (type === 'high') {
+    if (hasActiveHigh || hasActiveStd) {
+      return notify("Access Denied: Please complete your existing match first.", "alert-triangle");
+    }
+  }
+  
+  // কন্ডিশন ২: যদি ১৫% (Standard Stake) চ্যালেঞ্জ করতে চান
+  // নিয়ম: যদি আপনার হাতে অলরেডি একটি ১৫% ম্যাচ থাকে, তবে আর পারবেন না।
+  // কিন্তু, যদি একটি ৩০% ম্যাচ পেন্ডিং থাকে, তবে আপনি ১৫% চ্যালেঞ্জ করতে পারবেন (Exception)।
+  if (type === 'std') {
+    if (hasActiveStd) {
+      return notify("Limit Reached: You already have a Standard match active.", "alert-triangle");
+    }
+    // এখানে hasActiveHigh সত্য হলেও কোড নিচে যাবে (অর্থাৎ ৩০% থাকলেও ১৫% করা যাবে)
+  }
+  // -----------------------------------
+  
   // 2. Hunter Validations
   if (!hunter && !state.isAdmin) return notify("Login Required", "lock");
   
-  // Count Hunter's OWN Pending Requests (To enforce their limits)
+  // Count Hunter's OWN Pending Requests (To enforce their total limits)
   const pendingHigh = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'high' && m.status === 'pending').length;
   const pendingStd = state.matches.filter(m => m.homeId === hunterId && m.stakeType === 'std' && m.status === 'pending').length;
   
-  // Check Hunter Limits (Active + Pending)
-  if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Active + Pending requests)", "layers");
-  if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Active + Pending requests)", "layers");
+  // Check Hunter Limits (Total limit check)
+  if (type === 'high' && ((hunter.p2High || 0) + pendingHigh) >= 3) return notify("Limit Reached (Max 3 High Stake Matches)", "layers");
+  if (type === 'std' && ((hunter.p2Std || 0) + pendingStd) >= 2) return notify("Limit Reached (Max 2 Standard Matches)", "layers");
   
   // Check Target Slot Availability (Ensure they haven't finished their quota)
   if (type === 'high' && (target.p2High || 0) >= 3) return notify("Target's High Slots Full", "user-minus");
@@ -1052,13 +1083,9 @@ async function sendChallenge(hunterId, targetId, type) {
   
   // 4. CONFIRMATION & EXECUTION
   askConfirm(msg, async () => {
-    // --- ANTI-RACE CONDITION CHECK (SECURITY LAYER 2) ---
-    // Verify one last time before writing to DB in case someone else sent a request while the modal was open.
-    const doubleCheckBusy = state.matches.some(m =>
-      m.phase === 2 &&
-      m.status === 'pending' &&
-      m.awayId === targetId
-    );
+    // --- ANTI-RACE CONDITION CHECK (SECURITY LAYER 3) ---
+    // Confirm এ ক্লিক করার ঠিক আগ মুহূর্তেও যদি কেউ রিকোয়েস্ট পাঠিয়ে দেয়, এটি তা আটকাবে।
+    const doubleCheckBusy = state.matches.some(m => m.phase === 2 && m.status === 'pending' && m.awayId === targetId);
     
     if (doubleCheckBusy) {
       return notify("Too Late! Target just received another request.", "clock");
@@ -1077,7 +1104,7 @@ async function sendChallenge(hunterId, targetId, type) {
         createdAt: Date.now()
       });
       
-      notify(`Request Sent to ${target.name}!`, "send");
+      notify(`Request Sent: ${type === 'high' ? '30%' : '15%'} ${type.toUpperCase()}`, "send");
       
       // Refresh UI Instantly
       if (typeof renderBrokerBoard === 'function') {
