@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.9"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.1.0"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -683,7 +683,7 @@ function renderBrokerBoard() {
     
     // TAB: HUNTS (Negotiations & Targets)
     if (state.brokerSubTab === 'hunts') {
-        const myChallenges = state.matches.filter(m => m.phase === 2 && m.status === 'pending' && (state.isAdmin || m.homeId === myID || m.awayId === myID));
+        const myChallenges = state.matches.filter(m => m.phase == 2 && m.status === 'pending' && (state.isAdmin || m.homeId === myID || m.awayId === myID));
         
         // 1. Render Active Negotiations (Pending)
         if (myChallenges.length > 0) {
@@ -697,9 +697,8 @@ function renderBrokerBoard() {
                 const target = state.players.find(p => p.id === m.awayId);
                 const opp = isTarget ? challenger : target;
                 
-                // --- 15 HOUR TIMER & AUTO-WIN LOGIC ---
                 const createdTime = m.createdAt || Date.now();
-                const timeLimit = 15 * 60 * 60 * 1000; // 15 Hours
+                const timeLimit = 15 * 60 * 60 * 1000;
                 const expireTime = createdTime + timeLimit;
                 const now = Date.now();
                 const timeLeft = expireTime - now;
@@ -709,7 +708,6 @@ function renderBrokerBoard() {
                 let msgText = '';
                 
                 if (timeLeft > 0) {
-                    // === MATCH IS LIVE (TIMER RUNNING) ===
                     const hours = Math.floor(timeLeft / (1000 * 60 * 60));
                     const mins = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
                     
@@ -723,62 +721,26 @@ function renderBrokerBoard() {
                     
                     msgText = `
                     <p class="text-[8px] text-slate-400 font-bold text-center mt-3 px-2 leading-relaxed border-t border-white/5 pt-2">
-                        "Please knock him on Synthex Legion Chronicle's Messenger Group for accept the challenge or decline the challenge immediately"
+                        "Contact via Messenger immediately."
                     </p>`;
                     
-                    // === BUTTONS WITH LIMITATION LOGIC ===
                     if (isTarget || state.isAdmin) {
-                        // MERGED: Check Decline Limits Here
                         const declinesUsed = target?.p2Declines || 0;
                         const limitReached = declinesUsed >= 3;
+                        let declineBtnHTML = limitReached && !state.isAdmin ?
+                            `<button onclick="notify('Limit Reached: You used 3/3 Declines.', 'lock')" class="flex-1 py-3 bg-slate-800 text-slate-500 border border-slate-700 text-[9px] font-black rounded-xl uppercase cursor-not-allowed">Limit (3/3)</button>` :
+                            `<button onclick="respondToChallenge('${m.id}', 'decline')" class="flex-1 py-3 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all">Decline (${declinesUsed}/3)</button>`;
                         
-                        let declineBtnHTML = '';
-                        
-                        if (limitReached && !state.isAdmin) {
-                            // LOCKED: 3/3 Used
-                            declineBtnHTML = `
-                            <button onclick="notify('Limit Reached: You used 3/3 Declines. You must fight.', 'lock')" 
-                                class="flex-1 py-3 bg-slate-800 text-slate-500 border border-slate-700 text-[9px] font-black rounded-xl uppercase cursor-not-allowed">
-                                Limit (3/3)
-                            </button>`;
-                        } else {
-                            // ACTIVE: Can still decline
-                            declineBtnHTML = `
-                            <button onclick="respondToChallenge('${m.id}', 'decline')" 
-                                class="flex-1 py-3 bg-rose-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all">
-                                Decline (${declinesUsed}/3)
-                            </button>`;
-                        }
-                        
-                        statusHTML = `
-                        <div class="flex gap-2 mt-3">
-                            <button onclick="respondToChallenge('${m.id}', 'accept')" class="flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg">Accept</button>
-                            ${declineBtnHTML}
-                        </div>`;
+                        statusHTML = `<div class="flex gap-2 mt-3"><button onclick="respondToChallenge('${m.id}', 'accept')" class="flex-1 py-3 bg-emerald-600 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg">Accept</button>${declineBtnHTML}</div>`;
                     } else {
                         statusHTML = `<div class="py-3 mt-3 bg-white/5 border border-white/5 rounded-xl text-center"><p class="text-[7px] text-slate-500 italic uppercase font-black tracking-widest animate-pulse">Waiting for Response...</p></div>`;
                     }
-                    
                 } else {
-                    // === MATCH EXPIRED (15 HOURS PASSED) ===
-                    timerDisplay = `
-                    <div class="flex items-center gap-2 mt-2 bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/30 justify-center">
-                        <i data-lucide="check-circle" class="w-3 h-3 text-emerald-500"></i>
-                        <span class="text-[9px] font-black text-emerald-500 font-mono tracking-widest">
-                            TIMEOUT: AUTO-WIN AVAILABLE
-                        </span>
-                    </div>`;
-                    
+                    timerDisplay = `<div class="flex items-center gap-2 mt-2 bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/30 justify-center"><i data-lucide="check-circle" class="w-3 h-3 text-emerald-500"></i><span class="text-[9px] font-black text-emerald-500 font-mono tracking-widest">TIMEOUT: AUTO-WIN AVAILABLE</span></div>`;
                     if (!isTarget) {
-                        // Challenger sees the Win Button
                         const winType = m.stakeType === 'high' ? '30%' : '15%';
-                        statusHTML = `
-                        <button onclick="claimAutoWin('${m.id}')" class="w-full mt-3 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg shadow-emerald-900/20">
-                            CLAIM AUTO-WIN (${winType} POOL)
-                        </button>
-                        <p class="text-[7px] text-slate-500 text-center mt-1">Opponent unresponsive. Match counts as played.</p>`;
+                        statusHTML = `<button onclick="claimAutoWin('${m.id}')" class="w-full mt-3 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-[9px] font-black rounded-xl uppercase active:scale-95 transition-all shadow-lg shadow-emerald-900/20">CLAIM AUTO-WIN (${winType} POOL)</button><p class="text-[7px] text-slate-500 text-center mt-1">Opponent unresponsive. Match counts as played.</p>`;
                     } else {
-                        // Target sees they lost
                         statusHTML = `<div class="py-3 mt-3 bg-rose-900/20 border border-rose-500/20 rounded-xl text-center"><p class="text-[7px] text-rose-500 italic uppercase font-black tracking-widest">You forfeited by timeout.</p></div>`;
                     }
                 }
@@ -798,10 +760,7 @@ function renderBrokerBoard() {
                                     <span class="text-[8px] font-black text-gold-400 uppercase">${m.stakeRate}% ${m.stakeType.toUpperCase()}</span>
                                 </div>
                             </div>
-                            
-                            ${timerDisplay}
-                            ${msgText}
-                            ${statusHTML}
+                            ${timerDisplay}${msgText}${statusHTML}
                         </div>
                     </div>`;
             });
@@ -812,53 +771,88 @@ function renderBrokerBoard() {
         if (!myPlayer && !state.isAdmin) {
             container.innerHTML += `<p class="text-center py-10 text-slate-500 text-[8px] font-black uppercase">Please Login as Player to see Targets</p>`;
         } else {
+            // ============================================================
+            // 🔥 ULTIMATE SORTING LOGIC: PENDING + SCHEDULED CHECK 🔥
+            // ============================================================
             const targets = [...state.players]
-                .filter(p => p.id !== myID && !state.matches.some(m => m.phase === 2 && m.status !== 'declined' && m.status !== 'timeout_forfeit' && ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))))
-                .sort((a, b) => Math.abs(a.bounty - (myPlayer?.bounty || 0)) - Math.abs(b.bounty - (myPlayer?.bounty || 0)))
+                .filter(p =>
+                    p.id !== myID &&
+                    // Filter out players ALREADY in a match with ME specifically
+                    !state.matches.some(m =>
+                        m.phase == 2 &&
+                        m.status !== 'declined' &&
+                        m.status !== 'timeout_forfeit' &&
+                        ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))
+                    )
+                )
+                .sort((a, b) => {
+                    // HELPER: STRICT BUSY CHECK
+                    // Checks if player is in 'pending' OR 'scheduled' match with ANYONE
+                    const isBusy = (pid) => state.matches.some(m =>
+                        m.phase == 2 && // Loose equality (handles string/number match)
+                        (m.status === 'pending' || m.status === 'scheduled') &&
+                        (m.awayId === pid || m.homeId === pid)
+                    );
+                    
+                    const aBusy = isBusy(a.id);
+                    const bBusy = isBusy(b.id);
+                    
+                    // Priority 1: Free players (False) come before Busy players (True)
+                    if (!aBusy && bBusy) return -1; // A is Free, B is Busy -> A Top
+                    if (aBusy && !bBusy) return 1; // A is Busy, B is Free -> B Top
+                    
+                    // Priority 2: Bounty Distance
+                    const myBP = myPlayer?.bounty || 0;
+                    const diffA = Math.abs(a.bounty - myBP);
+                    const diffB = Math.abs(b.bounty - myBP);
+                    
+                    return diffA - diffB;
+                })
                 .slice(0, 5);
+            // ============================================================
             
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
             
             targets.forEach(t => {
-                // Check if target is already in a scheduled/played match
-                const isBusy = state.matches.some(m => m.phase === 2 && m.status === 'scheduled' && (m.homeId === t.id || m.awayId === t.id));
-                
-                // --- NEW FIX: Check if target has ANY pending challenge from ANYONE ---
-                const isNegotiating = state.matches.some(m =>
-                    m.phase === 2 &&
-                    m.status === 'pending' &&
-                    m.awayId === t.id // They are receiving a challenge
-                );
+                // Determine Status for UI
+                const scheduledMatch = state.matches.find(m => m.phase == 2 && m.status === 'scheduled' && (m.homeId === t.id || m.awayId === t.id));
+                const pendingMatch = state.matches.find(m => m.phase == 2 && m.status === 'pending' && (m.awayId === t.id || m.homeId === t.id));
                 
                 const rank = getRankInfo(t.bounty);
-                
                 const hasScout = myPlayer?.active_effects?.scout;
+                
                 let scoutBtnHTML = '';
                 if (hasScout) {
-                    scoutBtnHTML = `
-                    <button onclick="useScout('${t.id}')" class="col-span-2 mb-2 py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase hover:bg-emerald-900/60 transition-colors shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2">
-                        <i data-lucide="scan" class="w-3 h-3"></i> Use Active Scout
-                    </button>`;
+                    scoutBtnHTML = `<button onclick="useScout('${t.id}')" class="col-span-2 mb-2 py-2 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 text-[8px] font-black rounded-xl uppercase hover:bg-emerald-900/60 transition-colors shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2"><i data-lucide="scan" class="w-3 h-3"></i> Use Active Scout</button>`;
                 }
                 
-                // Determine Action Area Content
                 let actionHTML = '';
                 
-                if (isNegotiating) {
-                    // --- NEW VISUAL: Lock the player if they are negotiating ---
+                if (pendingMatch) {
+                    // Case 1: Negotiating (Pending)
                     actionHTML = `
                     <div class="col-span-2 py-3 bg-rose-900/20 border border-rose-500/20 rounded-2xl text-center flex flex-col items-center justify-center">
                         <div class="flex items-center gap-2">
                             <i data-lucide="lock" class="w-3 h-3 text-rose-500"></i>
-                            <span class="text-[8px] font-black text-rose-500 uppercase tracking-widest">NEGOTIATING...</span>
+                            <span class="text-[8px] font-black text-rose-500 uppercase tracking-widest">NEGOTIATING</span>
                         </div>
-                        <p class="text-[6px] text-slate-500 uppercase font-bold mt-1">Player has a pending challenge</p>
+                        <p class="text-[6px] text-slate-500 uppercase font-bold mt-1">Pending Request Active</p>
+                    </div>`;
+                } else if (scheduledMatch) {
+                    // Case 2: Scheduled (Fixed Match)
+                    actionHTML = `
+                    <div class="col-span-2 py-3 bg-blue-900/20 border border-blue-500/20 rounded-2xl text-center flex flex-col items-center justify-center">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="calendar-check" class="w-3 h-3 text-blue-400"></i>
+                            <span class="text-[8px] font-black text-blue-400 uppercase tracking-widest">MATCH SCHEDULED</span>
+                        </div>
+                        <p class="text-[6px] text-slate-500 uppercase font-bold mt-1">Player is Booked</p>
                     </div>`;
                 } else {
-                    // Normal Buttons
+                    // Case 3: Available (Normal Buttons)
                     actionHTML = `
-                    <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" ${isBusy ? 'disabled' : ''} class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 disabled:opacity-20 hover:bg-white/5 transition-colors">Standard</button>
-                    <button onclick="sendChallenge('${myID}', '${t.id}', 'high')" ${isBusy ? 'disabled' : ''} class="py-3 bg-blue-600 rounded-2xl text-[8px] font-black text-white uppercase active:scale-95 shadow-lg shadow-blue-900/40 disabled:opacity-20 hover:bg-blue-500 transition-colors">High Stake</button>`;
+                    <button onclick="sendChallenge('${myID}', '${t.id}', 'std')" class="py-3 bg-slate-950 border border-white/10 rounded-2xl text-[8px] font-black text-slate-400 uppercase active:scale-95 hover:bg-white/5 transition-colors">Standard</button>
+                    <button onclick="sendChallenge('${myID}', '${t.id}', 'high')" class="py-3 bg-blue-600 rounded-2xl text-[8px] font-black text-white uppercase active:scale-95 shadow-lg shadow-blue-900/40 hover:bg-blue-500 transition-colors">High Stake</button>`;
                 }
                 
                 const card = document.createElement('div');
@@ -878,11 +872,7 @@ function renderBrokerBoard() {
                                 <span class="text-[6px] text-slate-600 font-black uppercase">Current BP</span>
                             </div>
                         </div>
-                        
-                        <div class="grid grid-cols-2 gap-3">
-                            ${scoutBtnHTML} 
-                            ${actionHTML}
-                        </div>
+                        <div class="grid grid-cols-2 gap-3">${scoutBtnHTML}${actionHTML}</div>
                     </div>`;
                 container.appendChild(card);
             });
@@ -915,6 +905,7 @@ function renderBrokerBoard() {
     }
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
+
 
 async function claimAutoWin(matchId) {
     // 1. Fetch FRESH match data (Security: Prevent Double Claims)
