@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.0.8"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.0.9"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -2600,6 +2600,37 @@ function toggleMatchSelection(mid) {
     renderSchedule(); // Re-render to show checkbox state
 }
 
+// --- SMART LOCK TIME CALCULATOR ---
+function getSmartLockTime(dateStr, timeStr) {
+    // 1. Basic 4 PM Setup for the selected date
+    let targetDate = new Date(`${dateStr}T16:00:00+06:00`); // 4 PM BD Time
+    let lockTimestamp = targetDate.getTime();
+    
+    // 2. If time is provided, check for Late Night logic
+    if (timeStr) {
+        const matchDateTime = new Date(`${dateStr}T${timeStr}+06:00`).getTime();
+        
+        // Get the hour of the match (0-23)
+        const matchHour = parseInt(timeStr.split(':')[0]);
+        
+        // LOGIC: If match is between 12:00 AM (00:00) and 5:00 AM (05:00)
+        // It means this matches belongs to the "Previous Night's" schedule.
+        // So, betting should close at 4 PM on the PREVIOUS DAY.
+        if (matchHour >= 0 && matchHour < 5) {
+            // Go back 1 day (24 hours)
+            lockTimestamp -= (24 * 60 * 60 * 1000);
+        }
+        // LOGIC: If match is during the day (e.g., 2 PM or 3 PM)
+        // Lock should be at match start time, not 4 PM (to prevent betting during play)
+        else if (matchDateTime < lockTimestamp) {
+            lockTimestamp = matchDateTime;
+        }
+    }
+    
+    return lockTimestamp;
+}
+
+// [UPDATED] applyBulkSchedule: Sets Betting Lock strictly to 4 PM BD Time
 async function applyBulkSchedule() {
     const d = document.getElementById('bulk-date').value;
     const t = document.getElementById('bulk-time').value;
@@ -2607,26 +2638,29 @@ async function applyBulkSchedule() {
     if (state.selectedMatches.size === 0) return notify("No matches selected", "alert-circle");
     if (!d) return notify("Select a Date", "calendar");
     
-    // --- NEW LOGIC: 15 HOUR LOCK ---
-    const now = Date.now();
-    const LOCK_DURATION = 15 * 60 * 60 * 1000; // 15 Hours in Milliseconds
-    const unlockTime = now + LOCK_DURATION;
-    // -------------------------------
+    // --- SMART LOGIC APPLIED ---
+    const lockTime = getSmartLockTime(d, t);
+    // ---------------------------
     
     try {
         const batch = db.batch();
         state.selectedMatches.forEach(mid => {
             const updateData = {
                 scheduledDate: d,
-                bettingEndsAt: unlockTime // Saving the 15-hour lock time
+                bettingEndsAt: lockTime
             };
-            if (t) updateData.deadline = `${d}T${t}`; // Only add time if selected
+            if (t) updateData.deadline = `${d}T${t}`;
             batch.update(db.collection("matches").doc(mid), updateData);
         });
         
         await batch.commit();
         
-        notify(`${state.selectedMatches.size} Matches Locked for 15 Hours!`, "lock");
+        // User Feedback formatting
+        const lockDateObj = new Date(lockTime);
+        const lockStr = lockDateObj.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+        const lockDay = lockDateObj.getDate() === new Date(d).getDate() ? "Same Day" : "Previous Day";
+        
+        notify(`Updated! Betting closes: ${lockDay} ${lockStr}`, "lock");
         state.bulkMode = false;
         state.selectedMatches.clear();
         renderSchedule();
@@ -3595,7 +3629,34 @@ function renderAdminList() {
 
 async function deleteP(id) { askConfirm("Delete player?", async () => await db.collection("players").doc(id).delete()); }
 async function setGlobalMatchDate() { const d = document.getElementById('admin-active-date-input').value; if(d) await db.collection("settings").doc("global").set({ activeDate: d }, {merge:true}); notify("Date Updated!"); }
-async function updateMatchSchedule(mid) { const d = document.getElementById('res-date').value; const dl = document.getElementById('res-deadline').value; await db.collection("matches").doc(mid).update({ scheduledDate: d, deadline: dl }); closeModal('modal-result'); }
+async function updateMatchSchedule(mid) {
+    const d = document.getElementById('res-date').value;
+    const rawDl = document.getElementById('res-deadline').value; // e.g. 2026-02-23T00:15
+    
+    if (!d) return notify("Please select a date", "calendar");
+    
+    let t = null;
+    if (rawDl && rawDl.includes('T')) {
+        t = rawDl.split('T')[1]; // Extract time part (00:15)
+    }
+    
+    // --- SMART LOGIC APPLIED ---
+    const lockTime = getSmartLockTime(d, t);
+    // ---------------------------
+    
+    try {
+        await db.collection("matches").doc(mid).update({
+            scheduledDate: d,
+            deadline: rawDl,
+            bettingEndsAt: lockTime
+        });
+        closeModal('modal-result');
+        notify("Schedule Updated with Smart Lock!", "check-circle");
+    } catch (e) {
+        console.error(e);
+        notify("Update Failed", "x-circle");
+    }
+}
 async function askFactoryReset() { askConfirm("WIPE CLOUD?", async () => { const p = await db.collection("players").get(); p.forEach(d => d.ref.delete()); const m = await db.collection("matches").get(); m.forEach(d => d.ref.delete()); notify("Reset!"); }); }
 
 // --- 11. NAVIGATION ---
