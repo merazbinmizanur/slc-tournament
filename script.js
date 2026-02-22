@@ -1007,16 +1007,16 @@ async function sendChallenge(hunterId, targetId, type) {
   const hunter = state.players.find(p => p.id === hunterId);
   const target = state.players.find(p => p.id === targetId);
   
-  // --- STRICT BUSY CHECK (SECURITY LAYER 1: TARGET) ---
-  // টার্গেটের কাছে যদি অলরেডি কোনো রিকোয়েস্ট (Pending) থাকে, তবে শুরুতেই থামিয়ে দিবে।
+// --- STRICT BUSY CHECK (SECURITY LAYER 1: TARGET) ---
+  // টার্গেটের যদি কোনো রিকোয়েস্ট (Pending) অথবা রানিং ম্যাচ (Scheduled) থাকে, তবে শুরুতেই থামিয়ে দিবে।
   const isTargetBusy = state.matches.some(m =>
-    m.phase === 2 &&
-    m.status === 'pending' &&
-    m.awayId === targetId // Target is the receiver
+    m.phase == 2 &&
+    (m.status === 'pending' || m.status === 'scheduled') &&
+    (m.homeId === targetId || m.awayId === targetId) // Target is busy
   );
   
   if (isTargetBusy) {
-    return notify("Action Failed: Target is currently in negotiation.", "x-octagon");
+    return notify("Action Failed: Target is currently in a match (Busy).", "x-octagon");
   }
   // -----------------------------------
   
@@ -1075,11 +1075,14 @@ async function sendChallenge(hunterId, targetId, type) {
   // 4. CONFIRMATION & EXECUTION
   askConfirm(msg, async () => {
     // --- ANTI-RACE CONDITION CHECK (SECURITY LAYER 3) ---
-    // Confirm এ ক্লিক করার ঠিক আগ মুহূর্তেও যদি কেউ রিকোয়েস্ট পাঠিয়ে দেয়, এটি তা আটকাবে।
-    const doubleCheckBusy = state.matches.some(m => m.phase === 2 && m.status === 'pending' && m.awayId === targetId);
+    const doubleCheckBusy = state.matches.some(m => 
+        m.phase == 2 && 
+        (m.status === 'pending' || m.status === 'scheduled') && 
+        (m.homeId === targetId || m.awayId === targetId)
+    );
     
     if (doubleCheckBusy) {
-      return notify("Too Late! Target just received another request.", "clock");
+      return notify("Too Late! Target is now busy with another match.", "clock");
     }
     
     const mid = `p2-req-${Date.now()}`;
