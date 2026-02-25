@@ -774,41 +774,49 @@ function renderBrokerBoard() {
             // ============================================================
             // 🔥 ULTIMATE SORTING LOGIC: PENDING + SCHEDULED CHECK 🔥
             // ============================================================
+            // ============================================================
+            // 🔥 END-GAME LOGIC: SHOW ANY AVAILABLE PLAYER 🔥
+            // ============================================================
+            
             const targets = [...state.players]
-                .filter(p =>
-                    p.id !== myID &&
-                    // Filter out players ALREADY in a match with ME specifically
-                    !state.matches.some(m =>
+                .filter(p => {
+                    // ১. নিজেকে বাদ দিন
+                    if (p.id === myID) return false;
+
+                    // ২. ইতিমধ্যে আমার সাথে কথা হচ্ছে বা ম্যাচ আছে, এমন প্লেয়ার বাদ
+                    const interactingWithMe = state.matches.some(m =>
                         m.phase == 2 &&
                         m.status !== 'declined' &&
                         m.status !== 'timeout_forfeit' &&
-                        ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))
-                    )
-                )
-                .sort((a, b) => {
-                    // HELPER: STRICT BUSY CHECK
-                    // Checks if player is in 'pending' OR 'scheduled' match with ANYONE
-                    const isBusy = (pid) => state.matches.some(m =>
-                        m.phase == 2 && // Loose equality (handles string/number match)
-                        (m.status === 'pending' || m.status === 'scheduled') &&
-                        (m.awayId === pid || m.homeId === pid)
+                        ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === p.id))
                     );
-                    
-                    const aBusy = isBusy(a.id);
-                    const bBusy = isBusy(b.id);
-                    
-                    // Priority 1: Free players (False) come before Busy players (True)
-                    if (!aBusy && bBusy) return -1; // A is Free, B is Busy -> A Top
-                    if (aBusy && !bBusy) return 1; // A is Busy, B is Free -> B Top
-                    
-                    // Priority 2: Bounty Distance
+                    if (interactingWithMe) return false;
+
+                    // ৩. [নতুন নিয়ম] যাদের ৫টি ম্যাচ (কোটা) পূর্ণ হয়ে গেছে, তাদের দেখাবে না
+                    const totalPlayed = (p.p2High || 0) + (p.p2Std || 0);
+                    if (totalPlayed >= 5) return false;
+
+                    // ৪. [নতুন নিয়ম] যারা বর্তমানে অন্য কারো সাথে বিজি (Pending/Scheduled), তাদের দেখাবে না
+                    // অর্থাৎ শুধুমাত্র যারা সম্পূর্ণ "ফ্রি" আছে, তাদেরই শো করবে
+                    const isBusy = state.matches.some(m =>
+                        m.phase == 2 &&
+                        (m.status === 'pending' || m.status === 'scheduled') &&
+                        (m.homeId === p.id || m.awayId === p.id)
+                    );
+                    if (isBusy) return false;
+
+                    return true;
+                })
+                .sort((a, b) => {
+                    // ৫. সর্টিং: বাউন্টি গ্যাপ অনুযায়ী সাজাবে, কিন্তু সবাইকেই দেখাবে
                     const myBP = myPlayer?.bounty || 0;
                     const diffA = Math.abs(a.bounty - myBP);
                     const diffB = Math.abs(b.bounty - myBP);
-                    
                     return diffA - diffB;
                 })
-                .slice(0, 5);
+                // আগে আমরা এখানে .slice(0, 5) ব্যবহার করতাম, এখন সেটা সরিয়ে দিলাম 
+                // বা বাড়িয়ে দিলাম যাতে লিস্টে থাকা সকল এভেলেবেল প্লেয়ার শো করে
+                .slice(0, 20); 
             // ============================================================
             
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
