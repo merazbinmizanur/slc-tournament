@@ -4,7 +4,7 @@
 // Version: 3.0.1 (Stable Build - Data Integrity & Footer Patch)
 // ==========================================================
 // ==========================================================
-const CURRENT_APP_VERSION = "1.1.0"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
+const CURRENT_APP_VERSION = "1.1.1"; // যখন আপডেট করবেন, এই সংখ্যাটি পরিবর্তন করবেন
 
 function checkAppVersion() {
     const savedVersion = localStorage.getItem('slc_app_version');
@@ -774,49 +774,41 @@ function renderBrokerBoard() {
             // ============================================================
             // 🔥 ULTIMATE SORTING LOGIC: PENDING + SCHEDULED CHECK 🔥
             // ============================================================
-            // ============================================================
-            // 🔥 END-GAME LOGIC: SHOW ANY AVAILABLE PLAYER 🔥
-            // ============================================================
-            
             const targets = [...state.players]
-                .filter(p => {
-                    // ১. নিজেকে বাদ দিন
-                    if (p.id === myID) return false;
-
-                    // ২. ইতিমধ্যে আমার সাথে কথা হচ্ছে বা ম্যাচ আছে, এমন প্লেয়ার বাদ
-                    const interactingWithMe = state.matches.some(m =>
+                .filter(p =>
+                    p.id !== myID &&
+                    // Filter out players ALREADY in a match with ME specifically
+                    !state.matches.some(m =>
                         m.phase == 2 &&
                         m.status !== 'declined' &&
                         m.status !== 'timeout_forfeit' &&
-                        ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === p.id))
-                    );
-                    if (interactingWithMe) return false;
-
-                    // ৩. [নতুন নিয়ম] যাদের ৫টি ম্যাচ (কোটা) পূর্ণ হয়ে গেছে, তাদের দেখাবে না
-                    const totalPlayed = (p.p2High || 0) + (p.p2Std || 0);
-                    if (totalPlayed >= 5) return false;
-
-                    // ৪. [নতুন নিয়ম] যারা বর্তমানে অন্য কারো সাথে বিজি (Pending/Scheduled), তাদের দেখাবে না
-                    // অর্থাৎ শুধুমাত্র যারা সম্পূর্ণ "ফ্রি" আছে, তাদেরই শো করবে
-                    const isBusy = state.matches.some(m =>
-                        m.phase == 2 &&
-                        (m.status === 'pending' || m.status === 'scheduled') &&
-                        (m.homeId === p.id || m.awayId === p.id)
-                    );
-                    if (isBusy) return false;
-
-                    return true;
-                })
+                        ((m.homeId === myID && m.awayId === p.id) || (m.homeId === p.id && m.awayId === myID))
+                    )
+                )
                 .sort((a, b) => {
-                    // ৫. সর্টিং: বাউন্টি গ্যাপ অনুযায়ী সাজাবে, কিন্তু সবাইকেই দেখাবে
+                    // HELPER: STRICT BUSY CHECK
+                    // Checks if player is in 'pending' OR 'scheduled' match with ANYONE
+                    const isBusy = (pid) => state.matches.some(m =>
+                        m.phase == 2 && // Loose equality (handles string/number match)
+                        (m.status === 'pending' || m.status === 'scheduled') &&
+                        (m.awayId === pid || m.homeId === pid)
+                    );
+                    
+                    const aBusy = isBusy(a.id);
+                    const bBusy = isBusy(b.id);
+                    
+                    // Priority 1: Free players (False) come before Busy players (True)
+                    if (!aBusy && bBusy) return -1; // A is Free, B is Busy -> A Top
+                    if (aBusy && !bBusy) return 1; // A is Busy, B is Free -> B Top
+                    
+                    // Priority 2: Bounty Distance
                     const myBP = myPlayer?.bounty || 0;
                     const diffA = Math.abs(a.bounty - myBP);
                     const diffB = Math.abs(b.bounty - myBP);
+                    
                     return diffA - diffB;
                 })
-                // আগে আমরা এখানে .slice(0, 5) ব্যবহার করতাম, এখন সেটা সরিয়ে দিলাম 
-                // বা বাড়িয়ে দিলাম যাতে লিস্টে থাকা সকল এভেলেবেল প্লেয়ার শো করে
-                .slice(0, 20); 
+                .slice(0, 5);
             // ============================================================
             
             if (targets.length === 0) container.innerHTML += `<p class="text-center py-10 text-slate-600 text-[8px] font-black uppercase">No Targets found in your Sector</p>`;
@@ -2010,6 +2002,7 @@ function askGeneratePhase3() {
     });
 }
 
+// [UPDATED] renderEliteBracket: Highly Professional Esports Redesign
 function renderEliteBracket() {
     const container = document.getElementById('bracket-list');
     if (!container) return;
@@ -2017,63 +2010,89 @@ function renderEliteBracket() {
     const m = (id) => state.matches.find(x => x.id === id) || { status: 'waiting' };
     const p = (id) => state.players.find(x => x.id === id) || { name: 'TBD' };
     
-    const renderBox = (match) => {
-        if (match.status === 'waiting' || (!match.homeId && !match.awayId)) {
-            return `<div class="bracket-match opacity-30"><p class="text-[8px] uppercase font-bold text-slate-500">Awaiting Winners</p></div>`;
+    const renderTeamLine = (playerId, matchData, isHome) => {
+        const player = p(playerId);
+        const isTBD = !playerId;
+        const winner = matchData.winnerId;
+        const isWinner = winner && winner === playerId;
+        
+        let scoreHTML = '';
+        if (matchData.status === 'played' || matchData.score) {
+            if (matchData.round === 'fn') {
+                // Final is single match
+                const s = isHome ? matchData.score.h : matchData.score.a;
+                scoreHTML = `<div class="elite-agg">${s}</div>`;
+            } else {
+                // QF & SF are Multi-Leg
+                const l1 = matchData.leg1 ? (isHome ? matchData.leg1.h : matchData.leg1.a) : '-';
+                const l2 = matchData.leg2 ? (isHome ? matchData.leg2.h : matchData.leg2.a) : '-';
+                const hasL3 = matchData.leg3 !== undefined;
+                const l3 = matchData.leg3 ? (isHome ? matchData.leg3.h : matchData.leg3.a) : '';
+                const agg = isHome ? matchData.score.h : matchData.score.a;
+                
+                scoreHTML = `
+                    <div class="elite-scores">
+                        <div class="elite-leg">${l1}</div>
+                        <div class="elite-leg">${l2}</div>
+                        ${hasL3 ? `<div class="elite-leg text-gold-500">${l3}</div>` : ''}
+                        <div class="elite-agg">${agg}</div>
+                    </div>
+                `;
+            }
         }
         
-        const h = p(match.homeId);
-        const a = p(match.awayId);
-        
-        const renderScores = (playerType) => {
-            if (match.round === 'fn') {
-                const score = match.score ? match.score[playerType] : '-';
-                return `<div class="bracket-score-box"><span class="w-8 !h-6 text-sm font-black text-white">${score}</span></div>`;
-            } else {
-                const l1 = match.leg1 ? match.leg1[playerType] : '-';
-                const l2 = match.leg2 ? match.leg2[playerType] : '-';
-                const needsLeg3 = match.leg3 || (match.leg1 && match.leg2 && (match.leg1.h + match.leg2.h === match.leg1.a + match.leg2.a));
-                const l3 = match.leg3 ? match.leg3[playerType] : '-';
-                
-                return `
-                    <div class="bracket-score-box">
-                        <span>${l1}</span><span>${l2}</span>
-                        ${needsLeg3 ? `<span>${l3}</span>` : ''}
-                    </div>`;
-            }
-        };
+        return `
+            <div class="elite-team ${isWinner ? 'winner' : ''} ${isTBD ? 'opacity-50' : ''}">
+                <div class="flex items-center gap-2">
+                    ${getAvatarUI(player, "w-6", "h-6", "text-[6px]")}
+                    <span class="text-[9px] font-black uppercase ${isWinner ? 'text-gold-500' : 'text-white'} truncate max-w-[80px]">
+                        ${isTBD ? 'TBD' : player.name}
+                    </span>
+                </div>
+                ${scoreHTML}
+            </div>
+        `;
+    };
+    
+    const renderBox = (matchId) => {
+        const match = m(matchId);
+        const isActive = match.homeId && match.awayId && match.status !== 'played';
         
         return `
-            <div class="bracket-match active:scale-95 cursor-pointer transition-transform" onclick="openResultEntry('${match.id}')">
-                <div class="bracket-team">
-                    <span class="text-[10px] uppercase font-black ${match.winnerId === match.homeId ? 'text-gold-500' : 'text-white'}">${h.name}</span>
-                    ${renderScores('h')}
+            <div class="elite-match cursor-pointer ${isActive ? 'moving-border-gold p-[1px]' : ''}" onclick="openResultEntry('${matchId}')">
+                <div class="bg-slate-900 rounded-[15px] p-2 h-full relative z-10">
+                    <div class="text-[7px] text-slate-500 font-bold uppercase tracking-widest text-center mb-2 border-b border-white/5 pb-1">
+                        ${match.status === 'played' ? '<span class="text-emerald-500">COMPLETED</span>' : (isActive ? '<span class="text-gold-500 animate-pulse">LIVE FIXTURE</span>' : 'AWAITING')}
+                    </div>
+                    ${renderTeamLine(match.homeId, match, true)}
+                    ${renderTeamLine(match.awayId, match, false)}
                 </div>
-                <div class="bracket-team mt-1">
-                    <span class="text-[10px] uppercase font-black ${match.winnerId === match.awayId ? 'text-gold-500' : 'text-white'}">${a.name}</span>
-                    ${renderScores('a')}
-                </div>
-                ${match.round === 'fn' ? '<div class="text-[7px] text-gold-500 font-black uppercase tracking-widest text-center mt-2 border-t border-white/5 pt-1">Grand Finale</div>' : ''}
             </div>`;
     };
     
     container.innerHTML = `
         <div class="bracket-wrapper custom-scrollbar">
-            <div class="bracket-column">
-                <h4 class="text-[8px] text-slate-500 font-black text-center mb-2">QUARTER FINALS</h4>
-                ${renderBox(m('p3-qf-0'))} ${renderBox(m('p3-qf-1'))}
-                ${renderBox(m('p3-qf-2'))} ${renderBox(m('p3-qf-3'))}
+            <!-- Quarter Finals -->
+            <div class="bracket-column qf">
+                <h4 class="text-[9px] text-slate-400 font-black text-center mb-4 uppercase tracking-[0.2em]">Quarter Finals</h4>
+                ${renderBox('p3-qf-0')}
+                ${renderBox('p3-qf-1')}
+                ${renderBox('p3-qf-2')}
+                ${renderBox('p3-qf-3')}
             </div>
-            <div class="bracket-column">
-                <h4 class="text-[8px] text-blue-400 font-black text-center mb-2">SEMI FINALS</h4>
-                ${renderBox(m('p3-sf-0'))} ${renderBox(m('p3-sf-1'))}
+            <!-- Semi Finals -->
+            <div class="bracket-column sf">
+                <h4 class="text-[9px] text-blue-400 font-black text-center mb-4 uppercase tracking-[0.2em]">Semi Finals</h4>
+                ${renderBox('p3-sf-0')}
+                ${renderBox('p3-sf-1')}
             </div>
-            <div class="bracket-column">
-                <h4 class="text-[8px] text-gold-500 font-black text-center mb-2">GRAND FINAL</h4>
-                ${renderBox(m('p3-fn-0'))}
+            <!-- Final -->
+            <div class="bracket-column fn">
+                <h4 class="text-[9px] text-gold-500 font-black text-center mb-4 uppercase tracking-[0.2em]">Grand Final</h4>
+                ${renderBox('p3-fn-0')}
             </div>
-        </div>`;
-    
+        </div>
+    `;
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -2086,16 +2105,49 @@ if (btn) {
     btn.disabled = true;
     btn.innerText = "PROCESSING...";
 }
-    const sH = parseInt(document.getElementById('res-s-h').value);
-    const sA = parseInt(document.getElementById('res-s-a').value);
-    const verifyId = document.getElementById('res-verify-id').value.trim().toUpperCase();
-
-    if (isNaN(sH) || isNaN(sA)) return notify("Enter scores", "alert-circle");
+// Inside saveMatchResult() - replace the score extraction part at the top:
+    let sH = 0, sA = 0;
+    let legUpdates = {};
     
     const m = state.matches.find(x => x.id === state.activeMatchId);
     if (!m) return;
-    
-    // Authorization Check
+
+    if (m.phase === 3 && m.round !== 'fn') {
+        const l1h = parseInt(document.getElementById('res-l1-h').value);
+        const l1a = parseInt(document.getElementById('res-l1-a').value);
+        const l2h = parseInt(document.getElementById('res-l2-h').value);
+        const l2a = parseInt(document.getElementById('res-l2-a').value);
+        
+        if (isNaN(l1h) || isNaN(l1a) || isNaN(l2h) || isNaN(l2a)) return notify("Leg 1 & 2 scores required", "alert-circle");
+
+        sH = l1h + l2h;
+        sA = l1a + l2a;
+        
+        legUpdates.leg1 = { h: l1h, a: l1a };
+        legUpdates.leg2 = { h: l2h, a: l2a };
+
+        // Handle Optional Leg 3
+        const l3hStr = document.getElementById('res-l3-h').value;
+        const l3aStr = document.getElementById('res-l3-a').value;
+        
+        if (l3hStr !== "" && l3aStr !== "") {
+            const l3h = parseInt(l3hStr);
+            const l3a = parseInt(l3aStr);
+            sH += l3h;
+            sA += l3a;
+            legUpdates.leg3 = { h: l3h, a: l3a };
+        }
+        
+        if (sH === sA) return notify("Knockouts cannot draw! Enter Leg 3/Penalties.", "alert-circle");
+        
+    } else {
+        sH = parseInt(document.getElementById('res-s-h').value);
+        sA = parseInt(document.getElementById('res-s-a').value);
+        if (isNaN(sH) || isNaN(sA)) return notify("Enter scores", "alert-circle");
+        if (m.phase === 3 && sH === sA) return notify("Finals cannot draw!", "alert-circle");
+    }
+
+    const verifyId = document.getElementById('res-verify-id').value.trim().toUpperCase();
     const isAuthorized = state.isAdmin || (verifyId === m.homeId || verifyId === m.awayId);
     if (!isAuthorized) return notify("Unauthorized", "lock");
 
@@ -2179,8 +2231,22 @@ if (sH > sA) {
     hBP = calcPoints(false, 0, drawPts, hEff);
     aBP = calcPoints(false, 0, drawPts, aEff);
 }
-        matchUpdate.score = { h: sH, a: sA };
-        matchUpdate.resultDelta = { h: hBP, a: aBP };
+matchUpdate.score = { h: sH, a: sA };
+matchUpdate.resultDelta = { h: hBP, a: aBP };
+Object.assign(matchUpdate, legUpdates); // Merge leg data into update object
+
+// --- BRACKET AUTO-ADVANCE FOR PHASE 3 ---
+if (m.phase === 3) {
+    const winnerId = sH > sA ? m.homeId : m.awayId;
+    matchUpdate.winnerId = winnerId;
+    
+    // Push Winner to Next Match Slot dynamically
+    if (m.nextMatch && m.nextSlot) {
+        batch.update(db.collection("matches").doc(m.nextMatch), {
+            [m.nextSlot]: winnerId
+        });
+    }
+}
 
         // --- NEW: POOL ADJUSTMENT FOR MATCH RESULTS ---
         // If players gain net positive BP, Pool decreases. If players lose net BP, Pool increases.
@@ -2376,13 +2442,17 @@ else if (reward.type === 'vault') {
     }
 }
 
-// [UPDATED] openResultEntry: Uses Avatar Engine for pictures
+// [UPDATED] openResultEntry: Supports Multi-Leg & Strict "Live" Rules
 function openResultEntry(id) {
     state.activeMatchId = id;
     const m = state.matches.find(x => x.id === id);
     
-    // --- SECURITY CHECK: 15 HOUR LOCK ---
-    if (!state.isAdmin) { // Admins can bypass, players cannot
+    // --- REQUIREMENT 4: STRICT LIVE/ACTIVE CHECK ---
+    if (!state.isAdmin) {
+        if (!m.scheduledDate || !m.deadline) {
+            return notify("Match is not scheduled yet! Admin must set a date.", "lock");
+        }
+        
         const now = Date.now();
         const unlockTime = m.bettingEndsAt || 0;
         
@@ -2397,32 +2467,66 @@ function openResultEntry(id) {
     const h = state.players.find(p => p.id === m.homeId);
     const a = state.players.find(p => p.id === m.awayId);
     
-    // 1. UI Labels (Names)
-    document.getElementById('res-h-name').innerText = h?.name || "TBD";
-    document.getElementById('res-a-name').innerText = a?.name || "TBD";
+    document.getElementById('res-match-label').innerText = m.status === 'played' ? `EDIT RESULT (PH-${m.phase})` : `PH-${m.phase} VERIFICATION`;
     
-    // 2. Inject Avatars
-    document.getElementById('res-h-avatar').innerHTML = getAvatarUI(h, "w-16", "h-16", "text-2xl");
-    document.getElementById('res-a-avatar').innerHTML = getAvatarUI(a, "w-16", "h-16", "text-2xl");
+    const scoreContainer = document.getElementById('res-score-container');
     
-    // 3. Check if Editing
-    if (m.status === 'played' && m.score) {
-        document.getElementById('res-s-h').value = m.score.h;
-        document.getElementById('res-s-a').value = m.score.a;
-        document.getElementById('res-match-label').innerText = `EDIT RESULT (PH-${m.phase})`;
+    // --- REQUIREMENT 2: MULTI-LEG INPUTS FOR PHASE 3 ---
+    if (m.phase === 3 && m.round !== 'fn') {
+        // Multi-leg logic for Quarter and Semi Finals
+        scoreContainer.innerHTML = `
+            <div class="flex justify-between items-center mb-4 px-2">
+                <div class="text-center w-24"><span class="text-[9px] font-black text-white uppercase truncate block">${h?.name || "HOME"}</span></div>
+                <span class="text-[8px] text-slate-500 font-bold uppercase">Multi-Leg Aggregate</span>
+                <div class="text-center w-24"><span class="text-[9px] font-black text-white uppercase truncate block">${a?.name || "AWAY"}</span></div>
+            </div>
+            <div class="flex flex-col w-full">
+                <div class="leg-input-row">
+                    <span class="text-[8px] font-black text-slate-400 uppercase w-12 text-left">Leg 1</span>
+                    <input type="number" id="res-l1-h" placeholder="0" value="${m.leg1?.h ?? ''}">
+                    <span class="text-slate-600 font-black">-</span>
+                    <input type="number" id="res-l1-a" placeholder="0" value="${m.leg1?.a ?? ''}">
+                </div>
+                <div class="leg-input-row">
+                    <span class="text-[8px] font-black text-slate-400 uppercase w-12 text-left">Leg 2</span>
+                    <input type="number" id="res-l2-h" placeholder="0" value="${m.leg2?.h ?? ''}">
+                    <span class="text-slate-600 font-black">-</span>
+                    <input type="number" id="res-l2-a" placeholder="0" value="${m.leg2?.a ?? ''}">
+                </div>
+                <div class="leg-input-row border-gold-500/30 bg-gold-500/5">
+                    <span class="text-[8px] font-black text-gold-500 uppercase w-12 text-left leading-tight">Leg 3<br><span class="text-[5px]">(If Tied)</span></span>
+                    <input type="number" id="res-l3-h" placeholder="-" value="${m.leg3?.h ?? ''}">
+                    <span class="text-slate-600 font-black">-</span>
+                    <input type="number" id="res-l3-a" placeholder="-" value="${m.leg3?.a ?? ''}">
+                </div>
+            </div>
+        `;
     } else {
-        // New Entry
-        document.getElementById('res-s-h').value = "";
-        document.getElementById('res-s-a').value = "";
-        document.getElementById('res-match-label').innerText = `PH-${m.phase} VERIFICATION`;
+        // Standard single-match inputs (Phase 1, 2, and Grand Final)
+        scoreContainer.innerHTML = `
+            <div class="flex items-center justify-between gap-4">
+                <div class="flex-1 text-center">
+                    ${getAvatarUI(h, "w-12", "h-12", "text-xl mx-auto mb-2")}
+                    <p class="text-[9px] font-bold text-slate-400 truncate uppercase">${h?.name || "TBD"}</p>
+                    <input type="number" id="res-s-h" value="${m.score?.h ?? ''}" class="w-full mt-2 p-3 bg-slate-950 border border-white/10 rounded-xl text-center text-xl font-black text-white outline-none focus:border-gold-500">
+                </div>
+                <div class="text-slate-700 font-black italic text-xl">VS</div>
+                <div class="flex-1 text-center">
+                    ${getAvatarUI(a, "w-12", "h-12", "text-xl mx-auto mb-2")}
+                    <p class="text-[9px] font-bold text-slate-400 truncate uppercase">${a?.name || "TBD"}</p>
+                    <input type="number" id="res-s-a" value="${m.score?.a ?? ''}" class="w-full mt-2 p-3 bg-slate-950 border border-white/10 rounded-xl text-center text-xl font-black text-white outline-none focus:border-gold-500">
+                </div>
+            </div>
+        `;
     }
     
-    // 4. Admin Layout
+    // Admin Layout Adjustments
     const verifyIdContainer = document.getElementById('res-verify-id').parentElement;
     if (state.isAdmin) {
         verifyIdContainer.classList.add('hidden');
         document.getElementById('res-date').value = m.scheduledDate || "";
         document.getElementById('res-deadline').value = m.deadline || "";
+        document.querySelector('.admin-tool.hidden.mb-8.p-5')?.classList.remove('hidden');
     } else {
         verifyIdContainer.classList.remove('hidden');
         document.getElementById('res-verify-id').value = "";
@@ -2430,8 +2534,6 @@ function openResultEntry(id) {
     
     openModal('modal-result');
 }
-
-
 // --- NEW: GOAL MILESTONE ENGINE ---
 
 async function checkAndRewardMilestones(playerId) {
